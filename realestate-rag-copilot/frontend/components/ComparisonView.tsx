@@ -406,7 +406,7 @@ const ROW_DEFS: RowDef[] = [
     higherIsBetter: true
   },
   {
-    label: "월 추정매출",
+    label: "자치구 월 매출 (참고)",
     render: (r) => {
       const v = r.business_findings?.trade_area?.metrics.avg_monthly_sales;
       if (!v) return "—";
@@ -415,6 +415,85 @@ const ROW_DEFS: RowDef[] = [
     },
     value: (r) => r.business_findings?.trade_area?.metrics.avg_monthly_sales ?? null,
     higherIsBetter: true
+  },
+  {
+    label: "점포당 월 매출 (추정)",
+    render: (r) => {
+      const m = r.business_findings?.trade_area?.metrics;
+      if (!m?.avg_monthly_sales || !m?.total_stores) return "—";
+      const perStore = m.avg_monthly_sales / m.total_stores;
+      if (perStore >= 100_000_000) return `${(perStore / 100_000_000).toFixed(2)}억/월`;
+      return `${(perStore / 10_000).toFixed(0)}만/월`;
+    },
+    value: (r) => {
+      const m = r.business_findings?.trade_area?.metrics;
+      if (!m?.avg_monthly_sales || !m?.total_stores) return null;
+      return m.avg_monthly_sales / m.total_stores;
+    },
+    higherIsBetter: true
+  },
+  {
+    label: "예상 월 임대료 (매출 × 8%)",
+    render: (r) => {
+      const m = r.business_findings?.trade_area?.metrics;
+      if (!m?.avg_monthly_sales || !m?.total_stores) return "—";
+      const perStore = m.avg_monthly_sales / m.total_stores;
+      const rent = perStore * 0.08;
+      if (rent >= 100_000_000) return `${(rent / 100_000_000).toFixed(1)}억/월`;
+      return `${(rent / 10_000).toFixed(0)}만/월`;
+    },
+    value: (r) => {
+      const m = r.business_findings?.trade_area?.metrics;
+      if (!m?.avg_monthly_sales || !m?.total_stores) return null;
+      return (m.avg_monthly_sales / m.total_stores) * 0.08;
+    },
+    higherIsBetter: false // 임대료 낮을수록 좋음
+  },
+  {
+    label: "예상 월 순익 (매출-임대료-원가40%)",
+    render: (r) => {
+      const m = r.business_findings?.trade_area?.metrics;
+      if (!m?.avg_monthly_sales || !m?.total_stores) return "—";
+      const perStore = m.avg_monthly_sales / m.total_stores;
+      const rent = perStore * 0.08;
+      const costOfGoods = perStore * 0.4; // 원가 40% (요식업 평균)
+      const profit = perStore - rent - costOfGoods;
+      if (profit < 0) return "—";
+      if (profit >= 100_000_000) return `${(profit / 100_000_000).toFixed(2)}억/월`;
+      return `${(profit / 10_000).toFixed(0)}만/월`;
+    },
+    value: (r) => {
+      const m = r.business_findings?.trade_area?.metrics;
+      if (!m?.avg_monthly_sales || !m?.total_stores) return null;
+      const perStore = m.avg_monthly_sales / m.total_stores;
+      const rent = perStore * 0.08;
+      const costOfGoods = perStore * 0.4;
+      return perStore - rent - costOfGoods;
+    },
+    higherIsBetter: true
+  },
+  {
+    label: "투자금 1억 회수기간",
+    render: (r) => {
+      const m = r.business_findings?.trade_area?.metrics;
+      if (!m?.avg_monthly_sales || !m?.total_stores) return "—";
+      const perStore = m.avg_monthly_sales / m.total_stores;
+      const profit = perStore * 0.52; // 100% - 임대료8% - 원가40%
+      if (profit <= 0) return "—";
+      const months = 100_000_000 / profit;
+      if (months > 120) return ">10년";
+      if (months >= 12) return `${(months / 12).toFixed(1)}년`;
+      return `${months.toFixed(1)}개월`;
+    },
+    value: (r) => {
+      const m = r.business_findings?.trade_area?.metrics;
+      if (!m?.avg_monthly_sales || !m?.total_stores) return null;
+      const perStore = m.avg_monthly_sales / m.total_stores;
+      const profit = perStore * 0.52;
+      if (profit <= 0) return null;
+      return 100_000_000 / profit;
+    },
+    higherIsBetter: false // 회수기간 짧을수록 좋음
   },
   {
     label: "20~40대 비율",
