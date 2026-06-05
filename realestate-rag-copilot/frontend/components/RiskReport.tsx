@@ -1381,15 +1381,194 @@ function statusText(status?: DataSourceStatus) {
   return `${label} · ${status.detail}`;
 }
 
+/** 모드별 핵심 KPI 자동 추출 (B+A 개편).
+ *  - 부동산: 일치율 / 등기 상태 / 건축물 용도 / 실거래 표본
+ *  - 창업: Decision / 동종업종 / 정화구역 / 상권 유동
+ *  - 상가: Decision / 인근 시세 / 건축물 / 상권 유동
+ */
+type ModeKpi = {
+  id: string;
+  label: string;
+  value: string;        // 핵심 수치 (큰 글자)
+  detail: string;       // 보조 설명
+  status: "success" | "fallback" | "missing" | "failed";
+  anchor?: string;      // 클릭 시 스크롤 target (#id)
+};
+
+function buildModeKpis(report: AnalyzeResponse): ModeKpi[] {
+  const mode = report.requested_mode ?? "real_estate";
+
+  if (mode === "business_permit") {
+    return [
+      {
+        id: "verdict",
+        label: "터무니 판단",
+        value: report.decision?.verdict?.toUpperCase() ?? "—",
+        detail: report.decision?.headline?.slice(0, 60) ?? "Decision Agent 미실행",
+        status: report.decision ? (report.decision.verdict === "go" ? "success" : report.decision.verdict === "stop" ? "failed" : "fallback") : "missing",
+        anchor: "decision-card"
+      },
+      (() => {
+        const c = report.business_findings?.competition;
+        return {
+          id: "competition",
+          label: "반경 200m 동종업종",
+          value: c ? `${c.total_stores}건` : "—",
+          detail: c ? `전체 ${c.all_stores_in_radius}건 · ${c.density_label}` : "검색 미실행",
+          status: c && c.total_stores > 0 ? "success" : c ? "missing" : "missing",
+          anchor: "competition-card"
+        } as ModeKpi;
+      })(),
+      (() => {
+        const sz = report.business_findings?.school_zone;
+        const total = sz?.in_relative_zone ?? sz?.total_schools_in_district ?? 0;
+        return {
+          id: "school",
+          label: "학교 정화구역 200m",
+          value: sz?.in_absolute_zone !== undefined
+            ? `학교 ${sz.in_relative_zone ?? 0}건`
+            : sz ? `자치구 ${sz.total_schools_in_district}건` : "—",
+          detail: sz?.in_absolute_zone !== undefined
+            ? `절대 50m ${sz.in_absolute_zone}건 · 상대 200m ${sz.in_relative_zone ?? 0}건`
+            : "NEIS + VWorld POI",
+          status: sz && total > 0 ? "fallback" : sz ? "success" : "missing",
+          anchor: "school-card"
+        } as ModeKpi;
+      })(),
+      (() => {
+        const t = report.business_findings?.trade_area;
+        return {
+          id: "trade",
+          label: "평일 유동인구",
+          value: t?.metrics.avg_weekday_floating
+            ? `${Math.round(t.metrics.avg_weekday_floating).toLocaleString()}명/일`
+            : "—",
+          detail: t ? `${t.district} ${t.quarter} · ${t.sample_size}개 상권` : "상권분석 미실행",
+          status: t?.metrics.avg_weekday_floating ? "success" : "missing",
+          anchor: "trade-card"
+        } as ModeKpi;
+      })()
+    ];
+  }
+
+  if (mode === "commercial_use") {
+    return [
+      {
+        id: "verdict",
+        label: "터무니 판단",
+        value: report.decision?.verdict?.toUpperCase() ?? "—",
+        detail: report.decision?.headline?.slice(0, 60) ?? "Decision Agent 미실행",
+        status: report.decision ? (report.decision.verdict === "go" ? "success" : report.decision.verdict === "stop" ? "failed" : "fallback") : "missing",
+        anchor: "decision-card"
+      },
+      (() => {
+        const p = report.commercial_findings?.property_value;
+        const sale = p?.average_sale_price;
+        return {
+          id: "value",
+          label: "인근 평균 매매가",
+          value: sale
+            ? sale >= 100_000_000
+              ? `${(sale / 100_000_000).toFixed(2)}억`
+              : `${(sale / 10_000).toFixed(0)}만`
+            : "—",
+          detail: p ? `${p.region_label} · 표본 ${p.sale_sample_size + p.rent_sample_size}건` : "—",
+          status: sale && sale > 0 ? "success" : "missing",
+          anchor: "property-value-card"
+        } as ModeKpi;
+      })(),
+      (() => {
+        const bg = report.building_register;
+        return {
+          id: "building",
+          label: "건축물 용도·층수",
+          value: bg?.mainPurpose ?? "—",
+          detail: bg ? `지상 ${bg.groundFloors ?? "?"}층 · 지하 ${bg.undergroundFloors ?? "?"}층` : "BuildingHUB 미조회",
+          status: bg ? "success" : "missing",
+          anchor: "building-card"
+        } as ModeKpi;
+      })(),
+      (() => {
+        const t = report.business_findings?.trade_area;
+        return {
+          id: "trade",
+          label: "상권 매출",
+          value: t?.metrics.avg_monthly_sales
+            ? t.metrics.avg_monthly_sales >= 100_000_000
+              ? `${(t.metrics.avg_monthly_sales / 100_000_000).toFixed(1)}억/월`
+              : `${(t.metrics.avg_monthly_sales / 10_000).toFixed(0)}만/월`
+            : "—",
+          detail: t ? `${t.district} ${t.quarter}` : "상권분석 미실행",
+          status: t?.metrics.avg_monthly_sales ? "success" : "missing",
+          anchor: "trade-card"
+        } as ModeKpi;
+      })()
+    ];
+  }
+
+  // real_estate (기본)
+  return [
+    (() => {
+      const diff = report.market_comparison.difference_rate;
+      return {
+        id: "match",
+        label: "시세 일치율",
+        value: report.market_comparison.sample_size > 0
+          ? `${Math.round((1 - Math.abs(diff)) * 100)}점`
+          : "—",
+        detail: `실거래 표본 ${report.market_comparison.sample_size}건 · ${report.market_comparison.match_mode === "complex" ? "단지 매칭" : "지역 참고"}`,
+        status: report.market_comparison.sample_size > 0 ? "success" : "missing",
+        anchor: "market-card"
+      } as ModeKpi;
+    })(),
+    (() => {
+      const reg = report.registry;
+      return {
+        id: "registry",
+        label: "등기부 검증",
+        value: reg?.status === "confirmed" ? "확인 완료" : reg?.status === "requires_user_action" ? "발급 대기" : "미확인",
+        detail: reg?.flags && reg.flags.length > 0 ? `위험 신호 ${reg.flags.length}건` : "근저당·압류·신탁 검증",
+        status: reg?.status === "confirmed" ? "success" : reg?.status === "requires_user_action" ? "fallback" : "missing",
+        anchor: "registry-card"
+      } as ModeKpi;
+    })(),
+    (() => {
+      const bg = report.building_register;
+      return {
+        id: "building",
+        label: "건축물 용도",
+        value: bg?.mainPurpose ?? "—",
+        detail: bg ? `지상 ${bg.groundFloors ?? "?"}층 · 사용승인 ${bg.useApprovalDate ?? "?"}` : "BuildingHUB 미조회",
+        status: bg ? "success" : "missing",
+        anchor: "building-card"
+      } as ModeKpi;
+    })(),
+    {
+      id: "score",
+      label: "터무니 점수",
+      value: `${report.risk_score}/100`,
+      detail: report.risk_level,
+      status: report.risk_score >= 70 ? "success" : report.risk_score >= 50 ? "fallback" : "failed",
+      anchor: "score-card"
+    }
+  ];
+}
+
 function DataStatusStrip({ report, framed = true }: { report: AnalyzeResponse; framed?: boolean }) {
-  const statuses = report.data_statuses ?? [];
-  if (statuses.length === 0) return null;
+  const kpis = buildModeKpis(report);
+  if (kpis.length === 0) return null;
 
   const tone = {
-    success: "border-moss/25 bg-moss/10 text-moss",
-    fallback: "border-brass/30 bg-brass/10 text-brass",
-    missing: "border-ink/10 bg-paper text-ink/60",
-    failed: "border-clay/30 bg-clay/10 text-clay"
+    success: "border-moss/40 bg-moss/8",
+    fallback: "border-brass/40 bg-brass/8",
+    missing: "border-ink/15 bg-paper",
+    failed: "border-clay/40 bg-clay/8"
+  } as const;
+  const accent = {
+    success: "text-moss",
+    fallback: "text-brass",
+    missing: "text-ink/55",
+    failed: "text-clay"
   } as const;
   const icons = {
     success: CheckCircle2,
@@ -1398,23 +1577,43 @@ function DataStatusStrip({ report, framed = true }: { report: AnalyzeResponse; f
     failed: XCircle
   };
 
+  const successCount = kpis.filter((k) => k.status === "success").length;
+
   const content = (
     <>
       <div className="mb-3 flex items-center justify-between gap-3">
-        <h2 className="text-sm font-black text-ink">근거 데이터 현황</h2>
-        <span className="text-xs font-bold text-ink/45">API/fallback trace</span>
+        <h2 className="text-sm font-black text-ink">핵심 KPI</h2>
+        <span className="text-xs font-bold text-ink/45">
+          {successCount}/{kpis.length} 데이터 확보 · 모드별 자동 선택
+        </span>
       </div>
-      <div className="grid gap-2 md:grid-cols-4">
-        {statuses.map((item) => {
-          const Icon = icons[item.status];
+      <div className="grid gap-3 md:grid-cols-4">
+        {kpis.map((kpi) => {
+          const Icon = icons[kpi.status];
+          const handleClick = () => {
+            if (kpi.anchor) {
+              const el = document.getElementById(kpi.anchor);
+              if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+            }
+          };
           return (
-            <div key={item.id} className={`min-w-0 rounded-md border px-3 py-3 ${tone[item.status]}`}>
-              <div className="mb-1 flex items-center gap-2">
-                <Icon aria-hidden="true" size={15} className="shrink-0" />
-                <strong className="min-w-0 text-xs">{item.label}</strong>
+            <button
+              key={kpi.id}
+              type="button"
+              onClick={handleClick}
+              className={`min-w-0 rounded-md border px-3 py-3.5 text-left transition hover:shadow-md ${tone[kpi.status]}`}
+            >
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <span className="text-[0.65rem] font-black uppercase tracking-[0.08em] text-ink/55">
+                  {kpi.label}
+                </span>
+                <Icon aria-hidden="true" size={14} className={accent[kpi.status]} />
               </div>
-              <p className="break-words text-xs leading-5 text-ink/65">{item.detail}</p>
-            </div>
+              <p className={`mt-1 font-serif text-xl font-black tabular-nums leading-tight ${accent[kpi.status]}`}>
+                {kpi.value}
+              </p>
+              <p className="mt-1 text-[0.65rem] leading-4 text-ink/60 line-clamp-2">{kpi.detail}</p>
+            </button>
           );
         })}
       </div>
@@ -2181,7 +2380,9 @@ export function RiskReport({
 
       {/* 1. Decision Card (결론) */}
       {isPlaceholderMode && report.decision ? (
-        <DecisionCard finding={report.decision} />
+        <div id="decision-card">
+          <DecisionCard finding={report.decision} />
+        </div>
       ) : null}
 
       {/* 2. 검토 위치 지도 */}
@@ -2209,7 +2410,9 @@ export function RiskReport({
 
       {/* 3. 상권 진단 (Trade Area) */}
       {isPlaceholderMode && report.business_findings?.trade_area ? (
-        <TradeAreaCard finding={report.business_findings.trade_area} />
+        <div id="trade-card">
+          <TradeAreaCard finding={report.business_findings.trade_area} />
+        </div>
       ) : null}
 
       {/* 4. 동종업종 밀집도 (Competition Density) — 데이터 있을 때만 */}
@@ -2217,17 +2420,23 @@ export function RiskReport({
       report.business_findings?.competition &&
       (report.business_findings.competition.total_stores > 0 ||
         report.business_findings.competition.all_stores_in_radius > 0) ? (
-        <CompetitionDensityCard finding={report.business_findings.competition} />
+        <div id="competition-card">
+          <CompetitionDensityCard finding={report.business_findings.competition} />
+        </div>
       ) : null}
 
       {/* 5. 건축물대장 */}
       {isPlaceholderMode && report.building_register ? (
-        <BuildingRegisterLightCard view={report.building_register} />
+        <div id="building-card">
+          <BuildingRegisterLightCard view={report.building_register} />
+        </div>
       ) : null}
 
       {/* 6. 상가 시세 (commercial_use only) */}
       {isPlaceholderMode && report.commercial_findings?.property_value ? (
-        <PropertyValueCard finding={report.commercial_findings.property_value} />
+        <div id="property-value-card">
+          <PropertyValueCard finding={report.commercial_findings.property_value} />
+        </div>
       ) : null}
 
       {/* 7. 학교 정화구역 — NEIS 자치구 매칭 OR VWorld 좌표 매칭이 있을 때 */}
@@ -2235,7 +2444,9 @@ export function RiskReport({
       report.business_findings?.school_zone &&
       (report.business_findings.school_zone.total_schools_in_district > 0 ||
         report.business_findings.school_zone.nearby_schools.length > 0) ? (
-        <SchoolZoneCard finding={report.business_findings.school_zone} />
+        <div id="school-card">
+          <SchoolZoneCard finding={report.business_findings.school_zone} />
+        </div>
       ) : null}
 
       {/* 8. 법령·조례·사례 RAG */}
