@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   Activity,
@@ -455,6 +456,12 @@ export default function Home() {
               <p className="mt-4 text-sm leading-6 text-ink/68">
                 위치와 조건을 입력하면 실거래·법령·권리 근거를 모아 터무니있는 검토를 시작합니다.
               </p>
+              <Link
+                href="/compare"
+                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md border border-moss/45 bg-moss/10 px-3 py-2.5 text-sm font-bold text-moss transition hover:bg-moss/15"
+              >
+                ⚖️ A/B/C 비교 분석 (베타)
+              </Link>
             </div>
 
             <section className="mt-5" aria-labelledby="pipeline-title">
