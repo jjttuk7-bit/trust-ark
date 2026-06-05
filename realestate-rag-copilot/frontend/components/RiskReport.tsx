@@ -373,6 +373,60 @@ function DecisionCard({
         </div>
       ) : null}
 
+      {/* 자치구 직통 연락처 + 액션 link 영역 */}
+      {finding.district_contact || (finding.action_links && finding.action_links.length > 0) ? (
+        <div className="mt-4 rounded-md border border-ink/15 bg-white/85 p-4">
+          <p className="text-[0.7rem] font-black uppercase tracking-[0.12em] text-ink/55">
+            🔗 빠른 액션 link
+          </p>
+          {finding.district_contact ? (
+            <div className="mt-3 flex flex-wrap items-center gap-3 rounded-md border border-moss/35 bg-moss/8 p-3">
+              <span className="text-xs font-black uppercase text-moss">자치구 직통</span>
+              <span className="text-sm font-bold text-ink">{finding.district_contact.name}</span>
+              <a
+                href={`tel:${finding.district_contact.phone.replace(/-/g, "")}`}
+                className="rounded-md border border-moss/45 bg-white px-3 py-1.5 text-sm font-black text-moss tabular-nums hover:bg-moss/15"
+              >
+                📞 {finding.district_contact.phone}
+              </a>
+              <a
+                href={finding.district_contact.website}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs font-bold text-moss underline-offset-2 hover:underline"
+              >
+                홈페이지 →
+              </a>
+            </div>
+          ) : null}
+          {finding.action_links && finding.action_links.length > 0 ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {finding.action_links.map((link, i) => {
+                const tone =
+                  link.category === "district"
+                    ? "border-moss/35 bg-moss/8 text-moss"
+                    : link.category === "national"
+                      ? "border-brass/40 bg-brass/10 text-brass"
+                      : link.category === "form"
+                        ? "border-ink/15 bg-paper text-ink"
+                        : "border-ink/20 bg-white text-ink/75";
+                return (
+                  <a
+                    key={i}
+                    href={link.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`rounded-md border px-3 py-1.5 text-xs font-bold transition hover:opacity-80 ${tone}`}
+                  >
+                    {link.label} →
+                  </a>
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       <p className="mt-4 text-[0.7rem] text-ink/55">
         ※ {finding.source}. 데이터 신뢰도: {finding.data_quality}
       </p>

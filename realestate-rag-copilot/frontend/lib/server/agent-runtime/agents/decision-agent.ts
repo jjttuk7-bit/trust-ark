@@ -10,7 +10,105 @@ import type {
   NaverContextFinding
 } from "@/lib/types";
 import { getOpenAIClient } from "@/lib/server/openai-client";
+import { SEOUL_DISTRICT_RESOURCES } from "@/lib/server/seoul-districts";
+import type { ActionLink } from "@/lib/types";
 import type { TraceRecorder } from "../trace";
+
+/** 모드·자치구·업종 기반 실제 action_links 자동 생성 */
+function buildActionLinks(args: {
+  mode?: string;
+  sigungu?: string;
+  businessType?: string;
+}): { links: ActionLink[]; districtContact?: { name: string; phone: string; website: string } } {
+  const links: ActionLink[] = [];
+
+  // 자치구청 (창업/상가/부동산 공통)
+  if (args.sigungu && SEOUL_DISTRICT_RESOURCES[args.sigungu]) {
+    const r = SEOUL_DISTRICT_RESOURCES[args.sigungu];
+    links.push({
+      label: `${args.sigungu}청 홈페이지 (위생과 안내)`,
+      url: r.website,
+      category: "district"
+    });
+  }
+
+  // 업종별 — 창업 모드
+  if (args.mode === "business_permit") {
+    if (args.businessType === "cafe" || args.businessType === "restaurant") {
+      links.push({
+        label: "식약처 식품안전나라 (영업신고 온라인)",
+        url: "https://www.foodsafetykorea.go.kr",
+        category: "national"
+      });
+      links.push({
+        label: "위생교육 신청 (한국휴게음식업중앙회)",
+        url: "https://www.efoodedu.or.kr",
+        category: "national"
+      });
+    }
+    if (args.businessType === "pc_room") {
+      links.push({
+        label: "게임물관리위원회 (게임시설업 등록)",
+        url: "https://www.grac.or.kr",
+        category: "national"
+      });
+    }
+    if (args.businessType === "karaoke") {
+      links.push({
+        label: "한국음악저작권협회 (저작권 등록)",
+        url: "https://www.komca.or.kr",
+        category: "national"
+      });
+    }
+    if (args.businessType === "academy") {
+      links.push({
+        label: "학원민원시스템 (교육청 학원 등록)",
+        url: "https://www.hakwon.go.kr",
+        category: "national"
+      });
+    }
+  }
+
+  // 부동산 모드 — 표준 양식
+  if (args.mode === "real_estate") {
+    links.push({
+      label: "국토부 표준임대차계약서 다운로드",
+      url: "https://www.molit.go.kr/USR/policyData/m_34681",
+      category: "form"
+    });
+    links.push({
+      label: "HUG 전세보증보험 신청",
+      url: "https://www.khug.or.kr",
+      category: "national"
+    });
+    links.push({
+      label: "인터넷등기소 (등기부등본 발급)",
+      url: "https://www.iros.go.kr",
+      category: "form"
+    });
+  }
+
+  // 자치구 조례 검색 (창업/상가 공통)
+  if (args.mode !== "real_estate" && args.sigungu) {
+    links.push({
+      label: `${args.sigungu} 자치법규 검색 (ELIS)`,
+      url: `https://www.elis.go.kr/newlaib/lawSearch.mo?orgnNm=${encodeURIComponent("서울특별시 " + args.sigungu)}`,
+      category: "search"
+    });
+  }
+
+  // 자치구 연락처
+  const districtContact =
+    args.sigungu && SEOUL_DISTRICT_RESOURCES[args.sigungu]
+      ? {
+          name: `${args.sigungu}청 위생과`,
+          phone: SEOUL_DISTRICT_RESOURCES[args.sigungu].phone,
+          website: SEOUL_DISTRICT_RESOURCES[args.sigungu].website
+        }
+      : undefined;
+
+  return { links, districtContact };
+}
 
 const AGENT = "Summarizer Agent" as const;
 
@@ -181,6 +279,15 @@ export async function runDecisionAgent({
         const verdict: DecisionVerdict =
           parsed.verdict === "go" || parsed.verdict === "stop" ? parsed.verdict : "conditional";
 
+        // 자치구 추출 (action_links 생성용)
+        const sigunguMatch = (payload.address ?? "").match(/([가-힣]+구)\s/);
+        const sigungu = sigunguMatch?.[1];
+        const { links: actionLinks, districtContact } = buildActionLinks({
+          mode: payload.mode,
+          sigungu,
+          businessType: payload.business_type
+        });
+
         const finding: DecisionFinding = {
           verdict,
           headline: parsed.headline?.trim() || "검토 데이터 종합 결과를 확인하세요.",
@@ -190,7 +297,9 @@ export async function runDecisionAgent({
             : [],
           red_flags: Array.isArray(parsed.red_flags) ? parsed.red_flags.filter(Boolean).slice(0, 2) : [],
           data_quality: parsed.data_quality?.trim() || "데이터 신뢰도 평가 미생성",
-          source: "터무니 의사결정 합성 (gpt-4o-mini, RAG + 공공 API + 외부 검색 종합)"
+          source: "터무니 의사결정 합성 (gpt-4o-mini, RAG + 공공 API + 외부 검색 종합)",
+          action_links: actionLinks.length > 0 ? actionLinks : undefined,
+          district_contact: districtContact
         };
         return finding;
       },

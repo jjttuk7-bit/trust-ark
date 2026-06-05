@@ -370,6 +370,12 @@ export type SbizWidgets = {
 
 export type DecisionVerdict = "go" | "conditional" | "stop";
 
+export type ActionLink = {
+  label: string;
+  url: string;
+  category: "district" | "national" | "form" | "search";
+};
+
 export type DecisionFinding = {
   verdict: DecisionVerdict;
   headline: string;             // 한 줄 결론
@@ -378,6 +384,14 @@ export type DecisionFinding = {
   red_flags: string[];          // 0~2개 빨간 신호
   data_quality: string;         // 데이터 신뢰도 1줄 평가
   source: string;
+  /** 자치구별 / 국가별 실제 액션 link (구청 홈페이지, 식약처, 표준 양식 등) */
+  action_links?: ActionLink[];
+  /** 자치구청 직통 연락처 (있을 때만) */
+  district_contact?: {
+    name: string;
+    phone: string;
+    website: string;
+  };
 };
 
 export type AnalyzeResponse = {

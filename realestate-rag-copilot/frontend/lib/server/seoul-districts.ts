@@ -36,6 +36,37 @@ export const SEOUL_SIGUNGU_CENTER: Record<string, { lat: number; lng: number }> 
   강동구: { lat: 37.5301, lng: 127.1238 }
 };
 
+/** 자치구별 공식 홈페이지 + 위생과 연락처 (창업 인허가 사전 컨설팅 link).
+ *  전화번호는 자치구 위생과 대표번호 (변경 가능성 있음, 사용자 자체 확인 필요).
+ */
+export const SEOUL_DISTRICT_RESOURCES: Record<string, { website: string; phone: string; sanitation_path: string }> = {
+  종로구: { website: "https://www.jongno.go.kr", phone: "02-2148-1114", sanitation_path: "/health" },
+  중구:   { website: "https://www.junggu.seoul.kr", phone: "02-3396-4114", sanitation_path: "/health" },
+  용산구: { website: "https://www.yongsan.go.kr", phone: "02-2199-7114", sanitation_path: "/health" },
+  성동구: { website: "https://www.sd.go.kr", phone: "02-2286-5000", sanitation_path: "/health" },
+  광진구: { website: "https://www.gwangjin.go.kr", phone: "02-450-7000", sanitation_path: "/health" },
+  동대문구: { website: "https://www.ddm.go.kr", phone: "02-2127-4114", sanitation_path: "/health" },
+  중랑구: { website: "https://www.jungnang.go.kr", phone: "02-2094-1114", sanitation_path: "/health" },
+  성북구: { website: "https://www.sb.go.kr", phone: "02-2241-1114", sanitation_path: "/health" },
+  강북구: { website: "https://www.gangbuk.go.kr", phone: "02-901-6000", sanitation_path: "/health" },
+  도봉구: { website: "https://www.dobong.go.kr", phone: "02-2091-2000", sanitation_path: "/health" },
+  노원구: { website: "https://www.nowon.kr", phone: "02-2116-3114", sanitation_path: "/health" },
+  은평구: { website: "https://www.ep.go.kr", phone: "02-351-6000", sanitation_path: "/health" },
+  서대문구: { website: "https://www.sdm.go.kr", phone: "02-330-1114", sanitation_path: "/health" },
+  마포구: { website: "https://www.mapo.go.kr", phone: "02-3153-8114", sanitation_path: "/health" },
+  양천구: { website: "https://www.yangcheon.go.kr", phone: "02-2620-3114", sanitation_path: "/health" },
+  강서구: { website: "https://www.gangseo.seoul.kr", phone: "02-2600-6114", sanitation_path: "/health" },
+  구로구: { website: "https://www.guro.go.kr", phone: "02-860-2114", sanitation_path: "/health" },
+  금천구: { website: "https://www.geumcheon.go.kr", phone: "02-2627-1000", sanitation_path: "/health" },
+  영등포구: { website: "https://www.ydp.go.kr", phone: "02-2670-3114", sanitation_path: "/health" },
+  동작구: { website: "https://www.dongjak.go.kr", phone: "02-820-1114", sanitation_path: "/health" },
+  관악구: { website: "https://www.gwanak.go.kr", phone: "02-879-5000", sanitation_path: "/health" },
+  서초구: { website: "https://www.seocho.go.kr", phone: "02-2155-6114", sanitation_path: "/health" },
+  강남구: { website: "https://www.gangnam.go.kr", phone: "02-3423-5114", sanitation_path: "/health" },
+  송파구: { website: "https://www.songpa.go.kr", phone: "02-2147-2000", sanitation_path: "/health" },
+  강동구: { website: "https://www.gangdong.go.kr", phone: "02-3425-5114", sanitation_path: "/health" }
+};
+
 export const SEOUL_SIGUNGU_CODE: Record<string, string> = {
   종로구: "11110",
   중구: "11140",
