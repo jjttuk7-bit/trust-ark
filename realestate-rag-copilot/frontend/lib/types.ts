@@ -298,6 +298,14 @@ export type LegalRagHit = {
   text: string;
   score: number;
   source: string;
+  /** Phase 5 GraphRAG: 이 청크와 연결된 연관 청크들 */
+  related_chunks?: Array<{
+    id: string;
+    domain: LegalRagDomain;
+    title: string;
+    text: string;
+    edge_reason: string;
+  }>;
 };
 
 export type LegalRagFinding = {
@@ -312,6 +320,8 @@ export type LegalRagFinding = {
   self_rag_confidence?: number;
   /** Phase 4 Corrective RAG: 재검색 적용 여부 */
   used_correction?: boolean;
+  /** Phase 5 GraphRAG: 연관 청크 첨부 여부 */
+  used_graph_rag?: boolean;
 };
 
 export type TradeAreaFinding = {

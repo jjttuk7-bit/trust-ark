@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { cosineSimilarity, embedQuery } from "./embedder";
 import { buildBm25Index, scoreBm25, reciprocalRankFusion, type Bm25Index } from "./bm25";
+import { enrichWithGraphRag, type GraphRagHit } from "./graph";
 import { getOpenAIClient } from "@/lib/server/openai-client";
 
 export type RagDomain = "law" | "ordinance" | "case" | "contract";
@@ -290,27 +291,39 @@ export async function correctiveRagSearch(args: {
   query: string;
   topK?: number;
   domains?: RagDomain[];
-}): Promise<{ hits: RagSearchHit[]; assessment: SelfRagAssessment; usedCorrection: boolean }> {
+  /** Phase 5 GraphRAG: 연관 청크 자동 첨부 (기본 true) */
+  graphRag?: boolean;
+}): Promise<{ hits: GraphRagHit[]; assessment: SelfRagAssessment; usedCorrection: boolean; usedGraphRag: boolean }> {
+  const useGraphRag = args.graphRag !== false;
   const initial = await searchRag(args);
   const assessment = await selfRagAssess({ query: args.query, hits: initial });
 
-  if (assessment.is_sufficient) {
-    return { hits: initial, assessment, usedCorrection: false };
-  }
+  let finalHits: RagSearchHit[] = initial;
+  let usedCorrection = false;
 
-  // 재검색 — missing_aspects를 쿼리에 보강
-  if (assessment.missing_aspects.length > 0) {
+  if (!assessment.is_sufficient && assessment.missing_aspects.length > 0) {
+    // 재검색 — missing_aspects를 쿼리에 보강
     const enrichedQuery = `${args.query} ${assessment.missing_aspects.join(" ")}`;
     const additional = await searchRag({
       ...args,
       query: enrichedQuery,
       topK: (args.topK ?? 5) * 2
     });
-    // 중복 제거 후 합치기
     const seen = new Set(initial.map((h) => h.id));
-    const merged = [...initial, ...additional.filter((h) => !seen.has(h.id))];
-    return { hits: merged.slice(0, args.topK ?? 5), assessment, usedCorrection: true };
+    finalHits = [...initial, ...additional.filter((h) => !seen.has(h.id))].slice(0, args.topK ?? 5);
+    usedCorrection = true;
   }
 
-  return { hits: initial, assessment, usedCorrection: false };
+  // Phase 5 GraphRAG — 연관 청크 첨부
+  let enriched: GraphRagHit[] = finalHits;
+  let graphRagApplied = false;
+  if (useGraphRag) {
+    const index = await loadRagIndex();
+    if (index) {
+      enriched = enrichWithGraphRag(finalHits, index.entries);
+      graphRagApplied = enriched.some((h) => h.related_chunks && h.related_chunks.length > 0);
+    }
+  }
+
+  return { hits: enriched, assessment, usedCorrection, usedGraphRag: graphRagApplied };
 }

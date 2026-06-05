@@ -489,6 +489,31 @@ function LegalRagCard({
         ))}
       </div>
 
+      {/* Phase 4·5 상태 칩 */}
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-[0.65rem]">
+        {finding.self_rag_confidence !== undefined ? (
+          <span
+            className={`rounded-md border px-2 py-0.5 font-bold ${
+              finding.self_rag_confidence >= 0.7
+                ? "border-moss/40 bg-moss/10 text-moss"
+                : "border-brass/40 bg-brass/10 text-brass"
+            }`}
+          >
+            🎯 Self-RAG {(finding.self_rag_confidence * 100).toFixed(0)}%
+          </span>
+        ) : null}
+        {finding.used_correction ? (
+          <span className="rounded-md border border-brass/40 bg-brass/10 px-2 py-0.5 font-bold text-brass">
+            🔄 Corrective 재검색 적용
+          </span>
+        ) : null}
+        {finding.used_graph_rag ? (
+          <span className="rounded-md border border-clay/40 bg-clay/10 px-2 py-0.5 font-bold text-clay">
+            🕸️ GraphRAG 연관 청크
+          </span>
+        ) : null}
+      </div>
+
       <ul className="mt-4 grid gap-2">
         {finding.hits.map((hit) => (
           <li key={hit.id} className="rounded-md border border-ink/10 bg-white p-3">
@@ -511,6 +536,35 @@ function LegalRagCard({
               {hit.text}
             </p>
             <p className="mt-1 text-[0.6rem] font-bold text-ink/40">{hit.source}</p>
+
+            {/* Phase 5 GraphRAG — 연관 청크 */}
+            {hit.related_chunks && hit.related_chunks.length > 0 ? (
+              <div className="mt-2 ml-3 border-l-2 border-clay/35 pl-3">
+                <p className="text-[0.6rem] font-black uppercase tracking-[0.1em] text-clay/80">
+                  🕸️ 연관 청크 (GraphRAG · {hit.related_chunks.length}건)
+                </p>
+                {hit.related_chunks.map((rc, idx) => (
+                  <div key={`${rc.id}-${idx}`} className="mt-1.5">
+                    <p className="text-[0.65rem] font-bold text-ink/75">
+                      <span
+                        className={`mr-1 rounded px-1 py-0.5 text-[0.55rem] font-black uppercase ${
+                          domainTone[rc.domain] ?? "border-ink/15 bg-ink/5 text-ink"
+                        }`}
+                      >
+                        {domainLabel[rc.domain] ?? rc.domain}
+                      </span>
+                      {rc.title}
+                    </p>
+                    <p className="mt-0.5 text-[0.65rem] leading-4 text-ink/60 line-clamp-2 whitespace-pre-wrap">
+                      {rc.text}
+                    </p>
+                    <p className="mt-0.5 text-[0.55rem] font-bold italic text-clay/70">
+                      ↔ {rc.edge_reason}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </li>
         ))}
       </ul>

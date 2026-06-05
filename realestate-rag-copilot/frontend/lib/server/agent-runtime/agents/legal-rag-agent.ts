@@ -120,11 +120,12 @@ export async function runLegalRagAgent({
       inputSummary,
       async () => {
         const rewritten = await rewriteQuery(payload, baseQuery);
-        // Phase 3+4 — Hybrid Search + LLM Reranker + Self-RAG + Corrective RAG
-        const { hits, assessment, usedCorrection } = await correctiveRagSearch({
+        // Phase 3+4+5 — Hybrid + Rerank + Self-RAG + Corrective + GraphRAG
+        const { hits, assessment, usedCorrection, usedGraphRag } = await correctiveRagSearch({
           query: rewritten,
           domains: domains as RagDomain[],
-          topK: 5
+          topK: 5,
+          graphRag: true
         });
         const indexInfo = describeIndex();
 
@@ -143,13 +144,21 @@ export async function runLegalRagAgent({
             section: h.section,
             text: h.text,
             score: h.score,
-            source: h.source
+            source: h.source,
+            related_chunks: h.related_chunks?.map((rc) => ({
+              id: rc.id,
+              domain: rc.domain as LegalRagDomain,
+              title: rc.title,
+              text: rc.text,
+              edge_reason: rc.edge_reason
+            }))
           })),
-          source: "내부 RAG Phase 3+4 (Hybrid BM25+Vector · LLM Rerank · Self-RAG · Corrective)",
-          note: `Phase 3: BM25+Vector Hybrid + LLM Rerank. Phase 4: Self-RAG confidence ${(assessment.confidence * 100).toFixed(0)}%${usedCorrection ? " → Corrective 재검색 적용" : ""}. 인덱스 ${indexInfo.size}건 중 top-${hits.length} 매칭.`,
+          source: "내부 RAG Phase 3+4+5 (Hybrid · Rerank · Self-RAG · Corrective · GraphRAG)",
+          note: `Phase 3: BM25+Vector Hybrid + LLM Rerank. Phase 4: Self-RAG confidence ${(assessment.confidence * 100).toFixed(0)}%${usedCorrection ? " → Corrective 재검색" : ""}. Phase 5: GraphRAG ${usedGraphRag ? "연관 청크 매칭됨" : "미적용"}. 인덱스 ${indexInfo.size}건 중 top-${hits.length} 매칭.`,
           index_size: indexInfo.size,
           self_rag_confidence: assessment.confidence,
-          used_correction: usedCorrection
+          used_correction: usedCorrection,
+          used_graph_rag: usedGraphRag
         };
         return finding;
       },
