@@ -156,21 +156,31 @@ export function ComparisonView() {
           ))}
         </div>
 
-        <div className="mt-5 flex items-center gap-3">
+        <div className="mt-5 flex flex-wrap items-center gap-3">
           <button
             type="button"
             onClick={analyzeAll}
             disabled={!canSubmit}
-            className="inline-flex min-h-11 items-center gap-2 rounded-md bg-ink px-5 text-sm font-bold text-cream disabled:opacity-50"
+            className="inline-flex min-h-11 items-center gap-2 rounded-md bg-ink px-5 text-sm font-bold text-cream shadow-md transition hover:bg-ink/85 disabled:cursor-not-allowed disabled:bg-ink/30 disabled:text-cream/90 disabled:shadow-none"
           >
-            {submitting ? <Loader2 aria-hidden="true" size={16} className="animate-spin" /> : <Compass aria-hidden="true" size={16} />}
-            {submitting ? "비교 분석 중..." : "비교 분석 시작"}
+            {submitting ? (
+              <Loader2 aria-hidden="true" size={16} className="animate-spin" />
+            ) : (
+              <Compass aria-hidden="true" size={16} />
+            )}
+            <span>
+              {submitting
+                ? "비교 분석 중..."
+                : canSubmit
+                  ? `비교 분석 시작 (${filledSlots.length}곳)`
+                  : `주소 ${2 - filledSlots.length}곳 더 입력 필요`}
+            </span>
           </button>
           <button
             type="button"
             onClick={resetAll}
             disabled={submitting}
-            className="rounded-md border border-ink/15 bg-white px-4 py-2 text-sm font-bold text-ink/65"
+            className="rounded-md border border-ink/15 bg-white px-4 py-2 text-sm font-bold text-ink/65 hover:border-ink/30"
           >
             초기화
           </button>
