@@ -1066,7 +1066,43 @@ function SchoolZoneCard({
   );
 }
 
-function PlannerInsightPanel({ planner }: { planner: AnalyzeResponse["planner"] }) {
+/** PlannableAgent → 실제 trace agent 이름 매핑 */
+const PLAN_AGENT_TO_TRACE: Record<string, string[]> = {
+  market_data: ["Market Data Agent"],
+  building_register: ["Building Register Agent"],
+  registry: ["Registry Agent"],
+  search_context: ["Search Context Agent"] // Naver + Naver Local + X + Competition Density 모두 같은 agent
+};
+
+/** trace 결과에서 plan agent의 실행 상태·시간 추출 */
+function getAgentExecutionStatus(
+  traceAgentNames: string[],
+  traces: AgentTrace[]
+): { status: "success" | "missing" | "failed" | "fallback" | "skipped"; durationMs: number; toolCount: number } {
+  const relevantTraces = traces.filter((t) => traceAgentNames.includes(t.agent));
+  if (relevantTraces.length === 0) {
+    return { status: "skipped", durationMs: 0, toolCount: 0 };
+  }
+  const durations = relevantTraces.map((t) => t.durationMs);
+  const hasFailed = relevantTraces.some((t) => t.status === "failed");
+  const hasFallback = relevantTraces.some((t) => t.status === "fallback");
+  const allSuccess = relevantTraces.every((t) => t.status === "success");
+  const status: "success" | "missing" | "failed" | "fallback" =
+    hasFailed ? "failed" : allSuccess ? "success" : hasFallback ? "fallback" : "missing";
+  return {
+    status,
+    durationMs: durations.reduce((a, b) => a + b, 0),
+    toolCount: relevantTraces.length
+  };
+}
+
+function PlannerInsightPanel({
+  planner,
+  traces
+}: {
+  planner: AnalyzeResponse["planner"];
+  traces?: AgentTrace[];
+}) {
   if (!planner) return null;
   const hasTags = planner.intent_tags.length > 0;
   const hasEmphasis = planner.emphasis.length > 0;
@@ -1110,25 +1146,58 @@ function PlannerInsightPanel({ planner }: { planner: AnalyzeResponse["planner"] 
       {planner.execution_plan?.length ? (
         <div className="mt-4 rounded-md border border-white/70 bg-white/80 p-3">
           <p className="text-[0.7rem] font-black uppercase tracking-[0.12em] text-ink/55">
-            터무니가 정한 검토 우선순위
+            🎯 Planner Agent의 실행 결정 + 실시간 실행 결과
           </p>
-          <ul className="mt-2 space-y-1.5 text-xs text-ink/75">
-            {planner.execution_plan.map((entry) => (
-              <li key={entry.agent} className="flex items-start gap-2">
-                <span
-                  className={`shrink-0 rounded px-1.5 py-0.5 text-[0.65rem] font-black ${PLAN_PRIORITY_CLASS[entry.priority] ?? PLAN_PRIORITY_CLASS.normal}`}
-                >
-                  {PLAN_PRIORITY_LABEL[entry.priority] ?? entry.priority}
-                </span>
-                <span>
-                  <strong className="text-ink">{PLAN_AGENT_LABEL[entry.agent] ?? entry.agent}</strong>
-                  {entry.notes ? <span className="text-ink/60"> — {entry.notes}</span> : null}
-                </span>
-              </li>
-            ))}
+          <ul className="mt-2 space-y-2 text-xs text-ink/75">
+            {planner.execution_plan.map((entry) => {
+              const traceAgentNames = PLAN_AGENT_TO_TRACE[entry.agent] ?? [];
+              const execStatus = traces
+                ? getAgentExecutionStatus(traceAgentNames, traces)
+                : { status: "skipped" as const, durationMs: 0, toolCount: 0 };
+              const statusTone =
+                execStatus.status === "success"
+                  ? "bg-moss/15 text-moss border border-moss/30"
+                  : execStatus.status === "fallback"
+                    ? "bg-brass/15 text-brass border border-brass/30"
+                    : execStatus.status === "failed"
+                      ? "bg-clay/15 text-clay border border-clay/30"
+                      : execStatus.status === "missing"
+                        ? "bg-ink/10 text-ink/60 border border-ink/15"
+                        : "bg-stone-200 text-stone-500 border border-stone-300";
+              const statusLabel =
+                execStatus.status === "success"
+                  ? `✓ 완료 ${(execStatus.durationMs / 1000).toFixed(1)}s`
+                  : execStatus.status === "fallback"
+                    ? `△ fallback ${(execStatus.durationMs / 1000).toFixed(1)}s`
+                    : execStatus.status === "failed"
+                      ? "✗ 실패"
+                      : execStatus.status === "missing"
+                        ? "○ 데이터 없음"
+                        : "⏭ 건너뜀";
+              return (
+                <li key={entry.agent} className="flex items-start gap-2 rounded-md bg-white px-2 py-1.5 shadow-sm">
+                  <span
+                    className={`shrink-0 rounded px-1.5 py-0.5 text-[0.65rem] font-black ${PLAN_PRIORITY_CLASS[entry.priority] ?? PLAN_PRIORITY_CLASS.normal}`}
+                  >
+                    {PLAN_PRIORITY_LABEL[entry.priority] ?? entry.priority}
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <strong className="text-ink">{PLAN_AGENT_LABEL[entry.agent] ?? entry.agent}</strong>
+                    {entry.notes ? <span className="text-ink/60"> — {entry.notes}</span> : null}
+                  </span>
+                  <span
+                    className={`shrink-0 rounded-md px-1.5 py-0.5 text-[0.6rem] font-black tabular-nums ${statusTone}`}
+                    title={execStatus.toolCount > 0 ? `${execStatus.toolCount}개 도구 호출` : ""}
+                  >
+                    {statusLabel}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
           <p className="mt-2 text-[0.7rem] text-ink/55">
-            ※ AI가 사용자 의도에 맞춰 어떤 데이터 단계를 최우선으로 볼지·건너뛸지 결정한 결과입니다. &ldquo;건너뜀&rdquo;인 항목은 외부 API 호출을 생략해 시간·비용을 절약합니다.
+            ※ Planner Agent (LLM)가 사용자 의도에 따라 동적으로 우선순위를 결정 — 같은 모드라도 입력에 따라 다른 plan.
+            우측 배지는 실제 실행 결과 (Trace Recorder 기록).
           </p>
         </div>
       ) : null}
@@ -2466,7 +2535,7 @@ export function RiskReport({
             🔧 Agent 호출 진단 · 플래너 의도 분석 (개발자 모드)
           </summary>
           <div className="mt-4">
-            <PlannerInsightPanel planner={report.planner} />
+            <PlannerInsightPanel planner={report.planner} traces={report.agent_traces} />
             {report.agent_traces && report.agent_traces.length > 0 ? (
               <div className="mt-5 rounded-md border border-ink/15 bg-white/85 p-4">
                 <p className="text-[0.7rem] font-black uppercase tracking-[0.12em] text-ink/55">
@@ -2510,7 +2579,7 @@ export function RiskReport({
               </div>
               <h2 className="mt-3 font-serif text-5xl font-black text-ink">{report.risk_level}</h2>
               <p className="mt-3 max-w-3xl text-sm leading-7 text-ink/72">{report.summary}</p>
-              <PlannerInsightPanel planner={report.planner} />
+              <PlannerInsightPanel planner={report.planner} traces={report.agent_traces} />
               <ScoreBreakdownPanel breakdown={report.score_breakdown} />
               <div className="mt-5 grid gap-2 sm:grid-cols-3">
                 {confidenceItems.map(([label, value, status]) => (
