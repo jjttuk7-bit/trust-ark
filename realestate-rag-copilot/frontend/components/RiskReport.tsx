@@ -2122,10 +2122,11 @@ export function RiskReport({
         <PropertyValueCard finding={report.commercial_findings.property_value} />
       ) : null}
 
-      {/* 7. 학교 정화구역 — 데이터 있을 때만 */}
+      {/* 7. 학교 정화구역 — NEIS 자치구 매칭 OR VWorld 좌표 매칭이 있을 때 */}
       {isPlaceholderMode &&
       report.business_findings?.school_zone &&
-      report.business_findings.school_zone.total_schools_in_district > 0 ? (
+      (report.business_findings.school_zone.total_schools_in_district > 0 ||
+        report.business_findings.school_zone.nearby_schools.length > 0) ? (
         <SchoolZoneCard finding={report.business_findings.school_zone} />
       ) : null}
 

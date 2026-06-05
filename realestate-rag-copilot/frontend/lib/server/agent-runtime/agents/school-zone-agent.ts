@@ -9,7 +9,7 @@ import {
   summarizeNeisAttempt,
   type SchoolInfoRow
 } from "@/lib/server/neis-api";
-import { geocodeAddress, type GeocodeResult } from "@/lib/server/vworld";
+import { geocodeAddress, searchVworldPlaces, type GeocodeResult, type VworldPlace } from "@/lib/server/vworld";
 import type { TraceRecorder } from "../trace";
 
 /** Haversine 거리 (미터) */
@@ -151,6 +151,38 @@ export async function runSchoolZoneAgent({
 
   const businessType = (payload.business_type ?? "other") as BusinessType;
 
+  // ★ VWorld POI fallback — NEIS와 무관하게 사용자 좌표 기준 학교 직접 검색
+  // (NEIS HTTP 500 같은 외부 장애에도 학교 카드 동작 보장)
+  const userLatPre = geocode?.result?.lat;
+  const userLngPre = geocode?.result?.lng;
+  let vworldSchools: VworldPlace[] = [];
+  if (typeof userLatPre === "number" && typeof userLngPre === "number") {
+    const schoolQueries = ["초등학교", "중학교", "고등학교"];
+    for (const q of schoolQueries) {
+      const r = await searchVworldPlaces({
+        query: q,
+        cx: userLngPre,
+        cy: userLatPre,
+        radius: 1000,
+        size: 50
+      });
+      if (r.ok && r.places.length > 0) {
+        vworldSchools.push(...r.places);
+      }
+    }
+    // 중복 제거 (title + address)
+    vworldSchools = Array.from(
+      new Map(vworldSchools.map((p) => [`${p.title}|${p.address}`, p])).values()
+    );
+    trace.record(
+      AGENT,
+      "vworldSchoolPOI",
+      `cx=${userLngPre.toFixed(4)} cy=${userLatPre.toFixed(4)} r=1000m`,
+      `초·중·고 학교 ${vworldSchools.length}건 검색 (VWorld POI)`,
+      vworldSchools.length > 0 ? "success" : "missing"
+    );
+  }
+
   try {
     return await trace.run(
       AGENT,
@@ -179,8 +211,7 @@ export async function runSchoolZoneAgent({
           return acc;
         }, {});
 
-        // ★ 사용자 좌표 있을 때 — 학교 주소 vworld geocode → Haversine 거리 계산
-        // 자치구 학교 전체를 geocode하기엔 너무 많아서 같은 도로 + 가까운 20개 우선
+        // ★ 사용자 좌표 있을 때 — VWorld POI 결과(이미 거리 계산됨) + NEIS geocode 보강
         const userLat = geocode?.result?.lat;
         const userLng = geocode?.result?.lng;
         const hasUserCoord = typeof userLat === "number" && typeof userLng === "number";
@@ -197,14 +228,30 @@ export async function runSchoolZoneAgent({
         let inAbsoluteZone = 0; // 50m 이내
         let inRelativeZone = 0; // 200m 이내
 
+        // VWorld POI에서 검색된 학교 (이미 거리 계산됨)
+        if (hasUserCoord && vworldSchools.length > 0) {
+          for (const p of vworldSchools) {
+            const kind = p.title.includes("초등") ? "초등학교" : p.title.includes("중학") ? "중학교" : p.title.includes("고등") ? "고등학교" : "학교";
+            enriched.push({
+              row: { SCHUL_NM: p.title, SCHUL_KND_SC_NM: kind, ORG_RDNMA: p.roadAddress || p.address } as SchoolInfoRow,
+              name: p.title,
+              kind,
+              address: p.roadAddress || p.address,
+              distance: p.distance
+            });
+          }
+        }
+
         if (hasUserCoord) {
-          // 우선 같은 도로 학교부터, 그 다음 자치구 학교 무작위 상위 20개
-          const candidates = sameRoadSchools.length > 0
+          // NEIS 학교 중 같은 도로 + 자치구 상위 20개 geocode (VWorld POI 결과와 중복은 제거)
+          const vworldNames = new Set(vworldSchools.map((p) => p.title));
+          const neisCandidates = sameRoadSchools.length > 0
             ? [...sameRoadSchools, ...districtSchools.filter((s) => !sameRoadSchools.includes(s))].slice(0, 25)
             : districtSchools.slice(0, 20);
+          const filteredCandidates = neisCandidates.filter((s) => !vworldNames.has(s.SCHUL_NM ?? ""));
 
           const results = await Promise.all(
-            candidates.map(async (s) => {
+            filteredCandidates.map(async (s) => {
               const address = s.ORG_RDNMA ?? "";
               const enrichedItem: EnrichedSchool = {
                 row: s,
@@ -223,8 +270,8 @@ export async function runSchoolZoneAgent({
             })
           );
 
-          enriched = results
-            .filter((e) => typeof e.distance === "number")
+          // VWorld 결과(이미 거리 있음) + NEIS geocode 결과 합치고 정렬
+          enriched = [...enriched, ...results.filter((e) => typeof e.distance === "number")]
             .sort((a, b) => (a.distance ?? 0) - (b.distance ?? 0));
 
           inAbsoluteZone = enriched.filter((e) => (e.distance ?? Infinity) <= 50).length;
