@@ -19,9 +19,12 @@ import { Document, Packer, Paragraph, HeadingLevel, TextRun, Table, TableRow, Ta
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DOCS_DIR = path.join(__dirname, "..", "..", "docs");
-const SRC = path.join(DOCS_DIR, "DEMO_SCENARIO_2026-06-05.md");
-const PDF_OUT = path.join(DOCS_DIR, "DEMO_SCENARIO_2026-06-05.pdf");
-const DOCX_OUT = path.join(DOCS_DIR, "DEMO_SCENARIO_2026-06-05.docx");
+// 인자로 파일명 받음 (확장자 .md 자동 추가). 기본은 DEMO_SCENARIO.
+const argName = process.argv[2] ?? "DEMO_SCENARIO_2026-06-05";
+const baseName = argName.endsWith(".md") ? argName.slice(0, -3) : argName;
+const SRC = path.join(DOCS_DIR, `${baseName}.md`);
+const PDF_OUT = path.join(DOCS_DIR, `${baseName}.pdf`);
+const DOCX_OUT = path.join(DOCS_DIR, `${baseName}.docx`);
 
 async function main() {
   const md = await readFile(SRC, "utf-8");
@@ -60,7 +63,7 @@ async function main() {
     printBackground: true,
     margin: { top: "20mm", bottom: "20mm", left: "18mm", right: "18mm" },
     displayHeaderFooter: true,
-    headerTemplate: '<div style="font-size:9px; color:#888; text-align:center; width:100%;">터무니 (Trust Ark) — 발표 시연 시나리오</div>',
+    headerTemplate: `<div style="font-size:9px; color:#888; text-align:center; width:100%;">터무니 (Trust Ark) — ${baseName.replace(/_/g, " ")}</div>`,
     footerTemplate: '<div style="font-size:9px; color:#888; text-align:center; width:100%;"><span class="pageNumber"></span> / <span class="totalPages"></span></div>'
   });
   await browser.close();
