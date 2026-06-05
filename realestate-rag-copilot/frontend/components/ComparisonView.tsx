@@ -161,7 +161,7 @@ export function ComparisonView() {
             type="button"
             onClick={analyzeAll}
             disabled={!canSubmit}
-            className="inline-flex min-h-11 items-center gap-2 rounded-md bg-ink px-5 text-sm font-bold text-cream shadow-md transition hover:bg-ink/85 disabled:cursor-not-allowed disabled:bg-ink/30 disabled:text-cream/90 disabled:shadow-none"
+            className="inline-flex min-h-11 items-center gap-2 rounded-md bg-moss px-5 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-moss/85 disabled:cursor-not-allowed disabled:bg-ink/40 disabled:text-white/90 disabled:shadow-none"
           >
             {submitting ? (
               <Loader2 aria-hidden="true" size={16} className="animate-spin" />
@@ -217,31 +217,79 @@ function ComparisonResultGrid({ slots }: { slots: Slot[] }) {
         ))}
       </div>
 
-      {/* 비교 테이블 */}
+      {/* 종합 점수 막대 (상단) */}
+      {active.filter((s) => s.report).length >= 2 ? (
+        <div className="mt-5 grid gap-2 sm:grid-cols-3">
+          {active.map((s, idx) => {
+            const score = scoreOf(s.report) ?? 0;
+            const isWinner = idx === winnerIdx;
+            return (
+              <div
+                key={s.id}
+                className={`rounded-md border p-3 ${isWinner ? "border-moss/60 bg-moss/10" : "border-ink/10 bg-paper"}`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[0.7rem] font-black uppercase text-ink/55">{s.label}안 종합 점수</span>
+                  {isWinner ? <span className="text-[0.65rem] font-black text-moss">🏆 BEST</span> : null}
+                </div>
+                <p className="mt-1 font-serif text-2xl font-black tabular-nums text-ink">
+                  {Math.round(score)}<span className="text-base text-ink/45">/100</span>
+                </p>
+                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-ink/10">
+                  <div
+                    className={`h-full rounded-full ${isWinner ? "bg-moss" : "bg-ink/40"}`}
+                    style={{ width: `${Math.max(0, Math.min(100, score))}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+
+      {/* 비교 테이블 — 행별 1위 강조 */}
       {active.filter((s) => s.report).length >= 2 ? (
         <div className="mt-6 overflow-x-auto rounded-md border border-ink/15">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-ink text-cream">
-                <th className="px-3 py-2 text-left font-bold">항목</th>
+              <tr className="bg-ink text-white">
+                <th className="px-3 py-2.5 text-left font-bold">항목</th>
                 {active.map((s) => (
-                  <th key={s.id} className="px-3 py-2 text-left font-bold">
+                  <th key={s.id} className="px-3 py-2.5 text-left font-bold">
                     {s.label}안
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-ink/10 bg-white">
-              {ROW_DEFS.map((row) => (
-                <tr key={row.label}>
-                  <td className="px-3 py-2 font-bold text-ink/65">{row.label}</td>
-                  {active.map((s) => (
-                    <td key={s.id} className="px-3 py-2 text-ink">
-                      {s.report ? row.render(s.report) : s.loading ? "분석 중..." : "—"}
-                    </td>
-                  ))}
-                </tr>
-              ))}
+              {ROW_DEFS.map((row) => {
+                // 행별 best/worst 결정
+                const values = active.map((s) => (s.report ? row.value(s.report) : null));
+                const validValues = values.filter((v): v is number => v != null);
+                const bestValue = validValues.length > 0
+                  ? row.higherIsBetter
+                    ? Math.max(...validValues)
+                    : Math.min(...validValues)
+                  : null;
+                return (
+                  <tr key={row.label}>
+                    <td className="px-3 py-2 font-bold text-ink/65">{row.label}</td>
+                    {active.map((s, idx) => {
+                      const v = values[idx];
+                      const isBest = bestValue !== null && v === bestValue && validValues.length >= 2;
+                      return (
+                        <td
+                          key={s.id}
+                          className={`px-3 py-2 ${isBest ? "bg-moss/10 font-bold text-moss" : "text-ink"}`}
+                        >
+                          {s.report ? row.render(s.report) : s.loading ? "분석 중..." : "—"}
+                          {isBest ? <span className="ml-1 text-xs">⭐</span> : null}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -249,9 +297,14 @@ function ComparisonResultGrid({ slots }: { slots: Slot[] }) {
 
       {winnerIdx !== undefined && active[winnerIdx]?.report ? (
         <div className="mt-5 rounded-md border border-moss/45 bg-moss/10 p-4">
-          <p className="text-[0.7rem] font-black uppercase tracking-[0.16em] text-moss">종합 추천</p>
+          <p className="text-[0.7rem] font-black uppercase tracking-[0.16em] text-moss">🏆 종합 추천</p>
           <p className="mt-1 text-sm leading-6 text-ink">
-            <strong className="text-base">{active[winnerIdx].label}안</strong> — Decision 점수와 상권·경쟁 데이터를 종합한 결과 가장 유리한 위치로 판단됩니다.
+            <strong className="text-base">{active[winnerIdx].label}안</strong> —{" "}
+            {active[winnerIdx].report?.decision?.headline ??
+              "Decision 점수와 상권·경쟁 데이터를 종합한 결과 가장 유리한 위치로 판단됩니다."}
+          </p>
+          <p className="mt-2 text-xs text-ink/60">
+            ※ 종합 점수 = Decision verdict (max 100) − 경쟁 점수×0.3. ⭐ 표시는 각 항목별 1위.
           </p>
         </div>
       ) : null}
@@ -307,11 +360,25 @@ function SlotCard({ slot, isWinner }: { slot: Slot; isWinner?: boolean }) {
   );
 }
 
-/** 비교 테이블 row 정의 */
-const ROW_DEFS: Array<{ label: string; render: (r: AnalyzeResponse) => string }> = [
+/** 비교 테이블 row 정의 — 값(text) + 정량 (best/worst 자동 비교용) */
+type RowDef = {
+  label: string;
+  /** 텍스트로 표시할 값 */
+  render: (r: AnalyzeResponse) => string;
+  /** 정량값 추출 (null = 비교 제외) */
+  value: (r: AnalyzeResponse) => number | null;
+  /** 높을수록 좋은가? (예: 매출은 true, 경쟁점수는 false) */
+  higherIsBetter: boolean;
+  /** 단위 (예: "건", "명/일", "원/월") */
+  unit?: string;
+};
+
+const ROW_DEFS: RowDef[] = [
   {
     label: "최종 판단",
-    render: (r) => (r.decision?.verdict ? r.decision.verdict.toUpperCase() : r.risk_level || "—")
+    render: (r) => (r.decision?.verdict ? r.decision.verdict.toUpperCase() : r.risk_level || "—"),
+    value: (r) => (r.decision?.verdict === "go" ? 100 : r.decision?.verdict === "conditional" ? 60 : r.decision?.verdict === "stop" ? 20 : null),
+    higherIsBetter: true
   },
   {
     label: "동종업종 (200m)",
@@ -319,18 +386,24 @@ const ROW_DEFS: Array<{ label: string; render: (r: AnalyzeResponse) => string }>
       const c = r.business_findings?.competition;
       if (!c) return "—";
       return `${c.total_stores}건 (전체 ${c.all_stores_in_radius}건)`;
-    }
+    },
+    value: (r) => r.business_findings?.competition?.total_stores ?? null,
+    higherIsBetter: false // 경쟁 적을수록 좋음
   },
   {
     label: "경쟁 점수",
-    render: (r) => `${r.business_findings?.competition?.density_score ?? "—"}`
+    render: (r) => `${r.business_findings?.competition?.density_score ?? "—"}`,
+    value: (r) => r.business_findings?.competition?.density_score ?? null,
+    higherIsBetter: false
   },
   {
     label: "평일 유동인구",
     render: (r) => {
       const v = r.business_findings?.trade_area?.metrics.avg_weekday_floating;
       return v ? `${Math.round(v).toLocaleString()}명/일` : "—";
-    }
+    },
+    value: (r) => r.business_findings?.trade_area?.metrics.avg_weekday_floating ?? null,
+    higherIsBetter: true
   },
   {
     label: "월 추정매출",
@@ -339,11 +412,31 @@ const ROW_DEFS: Array<{ label: string; render: (r: AnalyzeResponse) => string }>
       if (!v) return "—";
       if (v >= 100_000_000) return `${(v / 100_000_000).toFixed(1)}억`;
       return `${(v / 10_000).toFixed(0)}만`;
-    }
+    },
+    value: (r) => r.business_findings?.trade_area?.metrics.avg_monthly_sales ?? null,
+    higherIsBetter: true
+  },
+  {
+    label: "20~40대 비율",
+    render: (r) => {
+      const m = r.business_findings?.trade_area?.metrics;
+      if (!m) return "—";
+      const sum = (m.age_20s_ratio ?? 0) + (m.age_30s_ratio ?? 0) + (m.age_40s_ratio ?? 0);
+      return sum > 0 ? `${sum.toFixed(1)}%` : "—";
+    },
+    value: (r) => {
+      const m = r.business_findings?.trade_area?.metrics;
+      if (!m) return null;
+      const sum = (m.age_20s_ratio ?? 0) + (m.age_30s_ratio ?? 0) + (m.age_40s_ratio ?? 0);
+      return sum > 0 ? sum : null;
+    },
+    higherIsBetter: true
   },
   {
     label: "건축물 용도",
-    render: (r) => r.building_register?.mainPurpose ?? "—"
+    render: (r) => r.building_register?.mainPurpose ?? "—",
+    value: () => null,
+    higherIsBetter: true
   },
   {
     label: "층수",
@@ -351,7 +444,9 @@ const ROW_DEFS: Array<{ label: string; render: (r: AnalyzeResponse) => string }>
       const bg = r.building_register;
       if (!bg) return "—";
       return `지상 ${bg.groundFloors ?? "?"}층 / 지하 ${bg.undergroundFloors ?? "?"}층`;
-    }
+    },
+    value: (r) => r.building_register?.groundFloors ?? null,
+    higherIsBetter: true
   },
   {
     label: "정화구역 200m",
@@ -359,7 +454,9 @@ const ROW_DEFS: Array<{ label: string; render: (r: AnalyzeResponse) => string }>
       const sz = r.business_findings?.school_zone;
       if (!sz || sz.in_relative_zone === undefined) return "—";
       return `학교 ${sz.in_relative_zone}건 (절대50m ${sz.in_absolute_zone ?? 0}건)`;
-    }
+    },
+    value: (r) => r.business_findings?.school_zone?.in_relative_zone ?? null,
+    higherIsBetter: false
   }
 ];
 
