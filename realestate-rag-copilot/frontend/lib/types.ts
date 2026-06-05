@@ -308,6 +308,10 @@ export type LegalRagFinding = {
   source: string;
   note: string;
   index_size?: number;
+  /** Phase 4 Self-RAG: 검색 결과 답변 가능성 평가 */
+  self_rag_confidence?: number;
+  /** Phase 4 Corrective RAG: 재검색 적용 여부 */
+  used_correction?: boolean;
 };
 
 export type TradeAreaFinding = {

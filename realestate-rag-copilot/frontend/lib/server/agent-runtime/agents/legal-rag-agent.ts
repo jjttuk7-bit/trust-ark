@@ -4,7 +4,7 @@ import type {
   LegalRagFinding,
   LegalRagHit
 } from "@/lib/types";
-import { describeIndex, searchRag, type RagDomain } from "@/lib/server/rag/search";
+import { correctiveRagSearch, describeIndex, type RagDomain } from "@/lib/server/rag/search";
 import { getOpenAIClient } from "@/lib/server/openai-client";
 import type { TraceRecorder } from "../trace";
 
@@ -120,11 +120,11 @@ export async function runLegalRagAgent({
       inputSummary,
       async () => {
         const rewritten = await rewriteQuery(payload, baseQuery);
-        const hits = await searchRag({
+        // Phase 3+4 — Hybrid Search + LLM Reranker + Self-RAG + Corrective RAG
+        const { hits, assessment, usedCorrection } = await correctiveRagSearch({
           query: rewritten,
           domains: domains as RagDomain[],
-          topK: 5,
-          minScore: 0.25
+          topK: 5
         });
         const indexInfo = describeIndex();
 
@@ -145,9 +145,11 @@ export async function runLegalRagAgent({
             score: h.score,
             source: h.source
           })),
-          source: "내부 RAG (식품위생법·풍속법·표준임대차·전세사기 사례·자치구 조례)",
-          note: `Agentic RAG: Planner 의도 기반 도메인 라우팅 + LLM 쿼리 리라이팅. 인덱스 ${indexInfo.size}건 중 top-${hits.length} 매칭.`,
-          index_size: indexInfo.size
+          source: "내부 RAG Phase 3+4 (Hybrid BM25+Vector · LLM Rerank · Self-RAG · Corrective)",
+          note: `Phase 3: BM25+Vector Hybrid + LLM Rerank. Phase 4: Self-RAG confidence ${(assessment.confidence * 100).toFixed(0)}%${usedCorrection ? " → Corrective 재검색 적용" : ""}. 인덱스 ${indexInfo.size}건 중 top-${hits.length} 매칭.`,
+          index_size: indexInfo.size,
+          self_rag_confidence: assessment.confidence,
+          used_correction: usedCorrection
         };
         return finding;
       },

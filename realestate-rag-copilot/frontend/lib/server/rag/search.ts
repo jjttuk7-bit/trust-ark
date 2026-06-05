@@ -211,3 +211,106 @@ export function describeIndex(): { ok: boolean; size: number; builtAt?: string }
   if (!cached) return { ok: false, size: 0 };
   return { ok: true, size: cached.entries.length, builtAt: cached.builtAt };
 }
+
+/**
+ * Phase 4 — Self-RAG: 검색 결과의 답변 가능성 평가.
+ *
+ * gpt-4o-mini가 query + hits를 보고 "이 정보로 답변 가능한가?" 평가.
+ * confidence (0~1) + missing_aspects (부족한 측면) 반환.
+ */
+export type SelfRagAssessment = {
+  confidence: number;            // 0~1
+  is_sufficient: boolean;        // confidence >= 0.6
+  missing_aspects: string[];     // 부족한 측면 (재검색용 키워드)
+  reasoning: string;
+};
+
+export async function selfRagAssess(args: {
+  query: string;
+  hits: RagSearchHit[];
+}): Promise<SelfRagAssessment> {
+  const client = getOpenAIClient();
+  if (!client || args.hits.length === 0) {
+    return { confidence: 0, is_sufficient: false, missing_aspects: [args.query], reasoning: "no hits or LLM" };
+  }
+
+  const hitTexts = args.hits
+    .slice(0, 5)
+    .map((h, idx) => `[${idx}] [${h.domain}] ${h.text.slice(0, 200).replace(/\n/g, " ")}`)
+    .join("\n");
+
+  try {
+    const completion = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: `당신은 RAG 검색 결과 평가자입니다. 쿼리에 대해 주어진 검색 결과만으로 답변이 충분한지 평가합니다.
+
+JSON으로만 답변: {"confidence": 0.85, "missing_aspects": ["...", "..."], "reasoning": "..."}
+
+기준:
+- 0.9~1.0: 매우 충분
+- 0.7~0.9: 충분
+- 0.5~0.7: 보강 필요
+- 0.5 미만: 부족, 재검색 필요
+
+missing_aspects는 부족한 정보 측면 1~3개 (예: ["임대료 정보", "신규 개업률"]).`
+        },
+        { role: "user", content: `쿼리: ${args.query}\n\n검색 결과:\n${hitTexts}` }
+      ],
+      max_tokens: 200,
+      temperature: 0
+    });
+    const text = completion.choices[0]?.message?.content ?? "{}";
+    const parsed = JSON.parse(text) as Partial<SelfRagAssessment>;
+    const confidence = typeof parsed.confidence === "number" ? Math.min(Math.max(parsed.confidence, 0), 1) : 0.5;
+    return {
+      confidence,
+      is_sufficient: confidence >= 0.6,
+      missing_aspects: Array.isArray(parsed.missing_aspects) ? parsed.missing_aspects.slice(0, 3) : [],
+      reasoning: parsed.reasoning ?? "(no reasoning)"
+    };
+  } catch (error) {
+    return {
+      confidence: 0.5,
+      is_sufficient: true,
+      missing_aspects: [],
+      reasoning: `평가 실패: ${error instanceof Error ? error.message : "unknown"}`
+    };
+  }
+}
+
+/**
+ * Phase 4 — Corrective RAG: confidence 낮으면 missing_aspects로 재검색.
+ * 1회 재검색 + 결과 보강.
+ */
+export async function correctiveRagSearch(args: {
+  query: string;
+  topK?: number;
+  domains?: RagDomain[];
+}): Promise<{ hits: RagSearchHit[]; assessment: SelfRagAssessment; usedCorrection: boolean }> {
+  const initial = await searchRag(args);
+  const assessment = await selfRagAssess({ query: args.query, hits: initial });
+
+  if (assessment.is_sufficient) {
+    return { hits: initial, assessment, usedCorrection: false };
+  }
+
+  // 재검색 — missing_aspects를 쿼리에 보강
+  if (assessment.missing_aspects.length > 0) {
+    const enrichedQuery = `${args.query} ${assessment.missing_aspects.join(" ")}`;
+    const additional = await searchRag({
+      ...args,
+      query: enrichedQuery,
+      topK: (args.topK ?? 5) * 2
+    });
+    // 중복 제거 후 합치기
+    const seen = new Set(initial.map((h) => h.id));
+    const merged = [...initial, ...additional.filter((h) => !seen.has(h.id))];
+    return { hits: merged.slice(0, args.topK ?? 5), assessment, usedCorrection: true };
+  }
+
+  return { hits: initial, assessment, usedCorrection: false };
+}
