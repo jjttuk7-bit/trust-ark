@@ -103,6 +103,13 @@ export const serverEnv = {
     process.env.NEXT_PUBLIC_KAKAO_REST_API_KEY ??
     process.env.NEXT_PUBLIC_KAKAO_MAP_KEY,
 
+  // SK TMAP API (openapi.sk.com) — appKey
+  // 좌표+반경+카테고리 POI 검색 (카카오 거절 대체)
+  tmapAppKey:
+    process.env.TMAP_APP_KEY ??
+    process.env.TMAP_API_KEY ??
+    process.env.SKT_TMAP_APP_KEY,
+
   // 소상공인365 (bigdata.sbiz.or.kr) iframe 위젯 임베드용 certKey 10종
   sbizKeys: {
     simple: process.env.SBIZ_SIMPLE_KEY,

@@ -12,6 +12,7 @@ import {
 } from "@/lib/server/commercial-area-api";
 import { searchNaverLocal, type NaverLocalItem } from "@/lib/server/naver-search";
 import { searchKakaoLocalPaged, type KakaoPlace } from "@/lib/server/kakao-local";
+import { searchTmapAroundCategory, type TmapPoi } from "@/lib/server/tmap";
 import { extractSeoulSigungu } from "@/lib/server/seoul-districts";
 import {
   geocodeAddress,
@@ -28,6 +29,16 @@ function kakaoPlaceToRow(place: KakaoPlace): CommercialStoreRow {
     indsMclsNm: place.category_name,
     rdnmAdr: place.road_address_name,
     lnoAdr: place.address_name
+  };
+}
+
+function tmapPoiToRow(poi: TmapPoi): CommercialStoreRow {
+  return {
+    bizesNm: poi.name,
+    indsSclsNm: poi.category,
+    indsMclsNm: poi.category,
+    rdnmAdr: poi.roadAddress,
+    lnoAdr: poi.address
   };
 }
 
@@ -161,9 +172,39 @@ export async function runCompetitionDensityAgent({
       TOOL,
       inputSummary,
       async () => {
+        let usedTmap = false;
         let usedKakao = false;
         let usedVworld = false;
         let vworldDiagnostic = "";
+
+        // ★ 0순위 — SK TMAP 주변 카테고리 검색 (좌표+반경+카테고리 직접, 최대 200건)
+        // 카페면 "카페;커피전문점;디저트카페", 음식점이면 "음식점" 등
+        const tmapCategories =
+          businessType === "cafe" ? "카페;커피전문점;디저트카페;베이커리" :
+          businessType === "restaurant" ? "음식점;한식;중식;양식;일식" :
+          businessType === "academy" ? "학원;교육" :
+          businessType === "beauty" ? "미용실;뷰티" :
+          businessType === "pc_room" ? "PC방" :
+          businessType === "karaoke" ? "노래방;노래연습장" :
+          businessLabel;
+
+        const tmapResult = await searchTmapAroundCategory({
+          cx: lng,
+          cy: lat,
+          radius: Math.max(radiusMeters, 1000), // TMAP은 km 단위라 최소 1km
+          categories: tmapCategories,
+          count: 100
+        });
+        // 진단 — TMAP 호출 결과
+        trace.record(
+          AGENT,
+          "tmapAroundCategory",
+          `cx=${lng.toFixed(4)} cy=${lat.toFixed(4)} cat=${tmapCategories}`,
+          tmapResult.ok
+            ? `pois=${tmapResult.pois.length}/${tmapResult.total} (${tmapResult.attempt.durationMs}ms)`
+            : `실패 HTTP ${tmapResult.attempt.httpStatus ?? "?"} · ${tmapResult.attempt.error?.slice(0, 80) ?? "unknown"}`,
+          tmapResult.ok ? (tmapResult.pois.length > 0 ? "success" : "missing") : "failed"
+        );
 
         // ★ 카카오 로컬 키워드 검색 (좌표+반경+카테고리 직접 지원, 최대 45건/검색)
         // 가장 정확. 카페면 CE7 카테고리 그룹 사용.
@@ -245,8 +286,31 @@ export async function runCompetitionDensityAgent({
         let fallbackNote = "";
         let primarySource = "";
 
+        // ★ 0순위 — TMAP POI (반경 내 200건, 거리순 정렬됨)
+        if (tmapResult.ok && tmapResult.pois.length > 0) {
+          // 입력 radius 이내만 필터 (TMAP은 km 단위라 더 넓게 호출했음)
+          const within = tmapResult.pois.filter((p) => (p.distance ?? Infinity) <= radiusMeters);
+          const final = within.length > 0 ? within : tmapResult.pois.slice(0, 10);
+          result = {
+            ok: true,
+            items: final.map(tmapPoiToRow),
+            totalCount: final.length,
+            rawText: undefined,
+            attempt: {
+              endpoint: "tmap-around-category",
+              urlRedacted: `cat=${tmapCategories} r=${radiusMeters}m`,
+              httpStatus: tmapResult.attempt.httpStatus,
+              totalCount: tmapResult.total,
+              rowCount: final.length,
+              durationMs: tmapResult.attempt.durationMs
+            }
+          };
+          usedTmap = true;
+          primarySource = "TMAP";
+          fallbackNote = `(SK TMAP "${tmapCategories}" · ${radiusMeters}m 이내 ${within.length}건 / 1km 이내 ${tmapResult.pois.length}건 · 거리순 정렬)`;
+        }
         // ★ 1순위 — 카카오 로컬 (가장 정확, 카테고리+반경 직접 지원)
-        if (kakaoResult.ok && kakaoResult.places.length > 0) {
+        else if (kakaoResult.ok && kakaoResult.places.length > 0) {
           result = {
             ok: true,
             items: kakaoResult.places.map(kakaoPlaceToRow),
@@ -495,13 +559,15 @@ export async function runCompetitionDensityAgent({
           density_label: density.label,
           density_score: density.score,
           sample_stores: sampleStores,
-          source: usedKakao
-            ? "Kakao Local (좌표+반경+카테고리 직접 검색, 거리순 정렬)"
-            : usedVworld
-              ? "VWorld Search POI (좌표+반경 검색)"
-              : usedNaverFallback
-                ? "Naver Local + vworld geocode (사용자 좌표 기준 Haversine 거리)"
-                : "소상공인진흥공단 상권정보 API",
+          source: usedTmap
+            ? "SK TMAP POI (좌표+반경+카테고리 직접 검색, 거리순 정렬)"
+            : usedKakao
+              ? "Kakao Local (좌표+반경+카테고리 직접 검색, 거리순 정렬)"
+              : usedVworld
+                ? "VWorld Search POI (좌표+반경 검색)"
+                : usedNaverFallback
+                  ? "Naver Local + vworld geocode (사용자 좌표 기준 Haversine 거리)"
+                  : "소상공인진흥공단 상권정보 API",
           diagnostic: usedNaverFallback
             ? `${summarizeCommercialAttempt(result.attempt)} · 거리: ${naverDiagnostic}`
             : summarizeCommercialAttempt(result.attempt),
