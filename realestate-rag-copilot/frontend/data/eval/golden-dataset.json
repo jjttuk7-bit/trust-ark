@@ -1,0 +1,160 @@
+{
+  "name": "터무니 RAG Golden Dataset v1",
+  "created": "2026-06-05",
+  "description": "10개 다양한 시나리오로 RAG 검색·답변 품질 평가",
+  "cases": [
+    {
+      "id": "case-001",
+      "category": "창업-카페-강남",
+      "input": {
+        "mode": "business_permit",
+        "address": "서울특별시 강남구 테헤란로4길 37",
+        "business_type": "cafe"
+      },
+      "expected": {
+        "domains": ["law", "ordinance", "contract"],
+        "expected_keywords": ["휴게음식점", "영업신고", "위생교육"],
+        "expected_verdict": "go",
+        "expected_min_hits": 3
+      }
+    },
+    {
+      "id": "case-002",
+      "category": "창업-PC방-목동",
+      "input": {
+        "mode": "business_permit",
+        "address": "서울특별시 양천구 목동중앙로 64",
+        "business_type": "pc_room"
+      },
+      "expected": {
+        "domains": ["law", "ordinance", "contract"],
+        "expected_keywords": ["풍속", "PC방", "정화구역", "청소년"],
+        "expected_verdict": "conditional",
+        "expected_min_hits": 3
+      }
+    },
+    {
+      "id": "case-003",
+      "category": "창업-노래방-홍대",
+      "input": {
+        "mode": "business_permit",
+        "address": "서울특별시 마포구 양화로 165",
+        "business_type": "karaoke"
+      },
+      "expected": {
+        "domains": ["law", "ordinance"],
+        "expected_keywords": ["노래방", "노래연습장", "풍속", "정화구역"],
+        "expected_verdict": "conditional",
+        "expected_min_hits": 3
+      }
+    },
+    {
+      "id": "case-004",
+      "category": "창업-학원-목동학원가",
+      "input": {
+        "mode": "business_permit",
+        "address": "서울특별시 양천구 목동중앙북로 12길 41",
+        "business_type": "academy"
+      },
+      "expected": {
+        "domains": ["law", "ordinance"],
+        "expected_keywords": ["학원", "교육특구", "목동"],
+        "expected_verdict": "go",
+        "expected_min_hits": 2
+      }
+    },
+    {
+      "id": "case-005",
+      "category": "창업-음식점-종로",
+      "input": {
+        "mode": "business_permit",
+        "address": "서울특별시 종로구 종로 1",
+        "business_type": "restaurant"
+      },
+      "expected": {
+        "domains": ["law", "ordinance"],
+        "expected_keywords": ["일반음식점", "영업신고", "위생"],
+        "expected_verdict": "go",
+        "expected_min_hits": 3
+      }
+    },
+    {
+      "id": "case-006",
+      "category": "부동산-전세-강남",
+      "input": {
+        "mode": "real_estate",
+        "address": "서울특별시 강남구 역삼동 825",
+        "property_type": "apartment",
+        "contract_type": "jeonse",
+        "deposit": 800000000
+      },
+      "expected": {
+        "domains": ["contract", "case"],
+        "expected_keywords": ["전세", "확정일자", "전입신고", "보증보험"],
+        "expected_min_hits": 3
+      }
+    },
+    {
+      "id": "case-007",
+      "category": "부동산-월세-양천",
+      "input": {
+        "mode": "real_estate",
+        "address": "서울특별시 양천구 신정동 890-14",
+        "property_type": "rowhouse",
+        "contract_type": "monthly",
+        "deposit": 30000000,
+        "monthly_rent": 700000
+      },
+      "expected": {
+        "domains": ["contract", "case"],
+        "expected_keywords": ["임대차", "보증금", "대항력"],
+        "expected_min_hits": 3
+      }
+    },
+    {
+      "id": "case-008",
+      "category": "부동산-전세사기위험-인천",
+      "input": {
+        "mode": "real_estate",
+        "address": "인천광역시 미추홀구 주안동 100",
+        "property_type": "rowhouse",
+        "contract_type": "jeonse",
+        "deposit": 250000000,
+        "user_question": "전세사기 위험은 어떤가요?"
+      },
+      "expected": {
+        "domains": ["case", "contract"],
+        "expected_keywords": ["전세사기", "빌라왕", "신탁", "보증보험"],
+        "expected_min_hits": 3
+      }
+    },
+    {
+      "id": "case-009",
+      "category": "상가-임대-강남",
+      "input": {
+        "mode": "commercial_use",
+        "address": "서울특별시 강남구 강남대로 396",
+        "commercial_purpose": "lease_out"
+      },
+      "expected": {
+        "domains": ["ordinance", "contract"],
+        "expected_keywords": ["상가건물", "임대차", "권리금"],
+        "expected_min_hits": 2
+      }
+    },
+    {
+      "id": "case-010",
+      "category": "상가-매수영업-홍대",
+      "input": {
+        "mode": "commercial_use",
+        "address": "서울특별시 마포구 와우산로 94",
+        "commercial_purpose": "business_location"
+      },
+      "expected": {
+        "domains": ["ordinance", "contract", "law"],
+        "expected_keywords": ["상권", "임대차", "근린생활시설"],
+        "expected_min_hits": 2
+      }
+    }
+  ]
+}
