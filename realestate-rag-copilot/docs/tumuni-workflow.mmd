@@ -1,0 +1,57 @@
+flowchart TD
+    %% ── 입력 ──
+    Input([사용자 입력<br/>주소 · 모드 · 업종])
+
+    Input --> ModeSplit{모드 분기}
+    ModeSplit -->|부동산 임차·매수| ModeRE[real_estate]
+    ModeSplit -->|창업·영업 적합성| ModeBP[business_permit]
+    ModeSplit -->|상가 활용성| ModeCU[commercial_use]
+
+    ModeRE & ModeBP & ModeCU --> Planner
+
+    %% ── LLM 입력 단계 ──
+    Planner["①  Planner Agent<br/>gpt-4o-mini · forced function-call<br/>의도 분류 + 실행계획"]
+
+    %% ── 병렬 데이터 Agent ──
+    Planner --> Loc["② Location Context<br/>VWorld + Naver Maps<br/>좌표·주소 변환"]
+    Planner --> Bldg["③ Building Register<br/>BuildingHUB 표제부<br/>용도·층수·위반"]
+    Planner --> Market["④ Market Data<br/>data.go.kr 실거래가<br/>매매·전월세"]
+    Planner --> Trade["⑤ Trade Area<br/>서울 상권분석 4종<br/>유동·매출·신규폐업"]
+    Planner --> Comp["⑥ Competition Density<br/>TMAP→Kakao→VWorld→소상공인→Naver<br/>4단 fallback chain"]
+    Planner --> School["⑦ School Zone<br/>NEIS + VWorld POI<br/>50m/200m 정화구역"]
+    Planner --> Local["⑧ Local Context<br/>Naver web/news/local + X<br/>LLM Relevance Filter"]
+    Planner --> Registry["⑨ Registry Agent<br/>CODEF 등기부등본<br/>근저당·신탁·압류"]
+
+    %% ── Agentic RAG (Phase 1~5) ──
+    Loc & Bldg & Market & Trade & Comp & School & Local & Registry --> RagBox
+
+    subgraph RagBox["⑩ Agentic RAG (Phase 1~5 모두 적용)"]
+        direction TB
+        R1["Phase 1 — Naive Vector<br/>text-embedding-3-small + cosine"]
+        R2["Phase 2 — Pre-retrieval<br/>도메인 라우팅 + LLM 쿼리 리라이팅"]
+        R3["Phase 3 — Hybrid<br/>BM25 + Vector + RRF + LLM Reranker"]
+        R4["Phase 4 — Self-RAG<br/>confidence 평가 + Corrective 재검색"]
+        R5["Phase 5 — GraphRAG<br/>청크 그래프 traversal"]
+        R1 --> R2 --> R3 --> R4 --> R5
+    end
+
+    %% ── 종합 LLM ──
+    RagBox --> Decision["⑪ Decision Agent<br/>gpt-4o-mini · JSON synthesis<br/>verdict · reasons · actions · red_flags"]
+    Decision --> Summarizer["⑫ Summarizer<br/>gpt-4o · 자연어 요약<br/>(부동산 모드만)"]
+    Decision --> Validation["⑬ Validation Agent<br/>단정 차단 · warnings"]
+
+    %% ── 출력 ──
+    Summarizer & Validation --> Trace["⑭ Trace Recorder<br/>14 Agent 호출 로그 실시간 공개"]
+    Trace --> Response([최종 응답<br/>Decision Card · 카드 10개<br/>Agent 진단 패널])
+
+    %% ── 스타일 ──
+    classDef llm fill:#2D4F3A,stroke:#1A1A1A,color:#FAF7F0,stroke-width:2px
+    classDef data fill:#C9A455,stroke:#1A1A1A,color:#1A1A1A,stroke-width:1.5px
+    classDef rag fill:#A66060,stroke:#1A1A1A,color:#FAF7F0,stroke-width:1.5px
+    classDef io fill:#F0EBDF,stroke:#1A1A1A,color:#1A1A1A,stroke-width:2px
+
+    class Planner,Decision,Summarizer llm
+    class Loc,Bldg,Market,Trade,Comp,School,Local,Registry data
+    class R1,R2,R3,R4,R5 rag
+    class Validation,Trace data
+    class Input,Response io
