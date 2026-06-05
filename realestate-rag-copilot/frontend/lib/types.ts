@@ -228,9 +228,14 @@ export type SchoolZoneFinding = {
     name: string;
     kind: string;                   // 초등학교/중학교/고등학교/...
     address: string;
-    matchedBy: "same_road" | "same_district";  // 매칭 방식
+    matchedBy: "absolute_zone" | "relative_zone" | "same_road" | "same_district";  // 매칭 방식
+    distance_meters?: number;       // 사용자 좌표 기준 거리 (m)
   }>;
   school_kind_counts: Record<string, number>;  // {"초등학교": 5, "중학교": 2, ...}
+  /** 50m 이내 학교 수 (절대보호구역) */
+  in_absolute_zone?: number;
+  /** 200m 이내 학교 수 (상대보호구역) */
+  in_relative_zone?: number;
   business_type_label: string;
   impact_level: SchoolZoneImpact;
   impact_message: string;            // 사용자 업종 기반 영향 안내

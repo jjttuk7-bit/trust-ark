@@ -99,12 +99,22 @@ export async function callNeis<T = Record<string, unknown>>(args: NeisCallArgs):
   const timer = setTimeout(() => controller.abort(), args.timeoutMs ?? 15_000);
 
   try {
-    const response = await fetch(url.toString(), {
+    // NEIS는 가끔 5xx 일시 장애. 5xx면 1회 재시도 (400ms 대기).
+    let response = await fetch(url.toString(), {
       method: "GET",
       cache: "no-store",
       signal: controller.signal,
       headers: { Accept: "application/json" }
     });
+    if (response.status >= 500 && response.status < 600) {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      response = await fetch(url.toString(), {
+        method: "GET",
+        cache: "no-store",
+        signal: controller.signal,
+        headers: { Accept: "application/json" }
+      });
+    }
     attempt.httpStatus = response.status;
     const text = await response.text();
     attempt.durationMs = Date.now() - started;

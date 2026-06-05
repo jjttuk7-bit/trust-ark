@@ -865,42 +865,88 @@ function SchoolZoneCard({
         </span>
       </div>
 
-      <div className="mt-5 grid gap-3 sm:grid-cols-3">
-        <div className="rounded-md border border-ink/10 bg-paper p-4">
-          <p className="text-[0.7rem] font-black uppercase text-ink/45">자치구 학교 수</p>
-          <p className="mt-1 font-serif text-3xl font-black tabular-nums text-ink">{finding.total_schools_in_district}</p>
-          <p className="mt-1 text-xs font-bold text-ink/55">건</p>
-        </div>
-        <div className="rounded-md border border-ink/10 bg-paper p-4 sm:col-span-2">
-          <p className="text-[0.7rem] font-black uppercase text-ink/45">학교 종류별</p>
-          <div className="mt-2 flex flex-wrap gap-2 text-xs">
-            {kindEntries.slice(0, 5).map(([kind, count]) => (
-              <span key={kind} className="rounded-md border border-ink/10 bg-white px-2 py-1 font-bold text-ink/75">
-                {kind} <strong className="text-ink">{count}</strong>
-              </span>
-            ))}
+      {/* 정화구역 핵심 메트릭 — 사용자 좌표 기반 거리 분류 (좌표 있을 때) */}
+      {finding.in_absolute_zone !== undefined || finding.in_relative_zone !== undefined ? (
+        <div className="mt-5 grid gap-3 sm:grid-cols-3">
+          <div className="rounded-md border border-clay/45 bg-clay/10 p-4">
+            <p className="text-[0.7rem] font-black uppercase text-clay">절대보호구역 (50m)</p>
+            <p className="mt-1 font-serif text-3xl font-black tabular-nums text-clay">
+              {finding.in_absolute_zone ?? 0}
+            </p>
+            <p className="mt-1 text-xs font-bold text-ink/55">학교 / PC방·노래방 영업 절대 금지</p>
+          </div>
+          <div className="rounded-md border border-brass/45 bg-brass/10 p-4">
+            <p className="text-[0.7rem] font-black uppercase text-brass">상대보호구역 (200m)</p>
+            <p className="mt-1 font-serif text-3xl font-black tabular-nums text-brass">
+              {finding.in_relative_zone ?? 0}
+            </p>
+            <p className="mt-1 text-xs font-bold text-ink/55">학교 / 심의 통과 시 영업 가능</p>
+          </div>
+          <div className="rounded-md border border-ink/10 bg-paper p-4">
+            <p className="text-[0.7rem] font-black uppercase text-ink/45">자치구 전체</p>
+            <p className="mt-1 font-serif text-3xl font-black tabular-nums text-ink">{finding.total_schools_in_district}</p>
+            <p className="mt-1 text-xs font-bold text-ink/55">학교</p>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="mt-5 grid gap-3 sm:grid-cols-3">
+          <div className="rounded-md border border-ink/10 bg-paper p-4">
+            <p className="text-[0.7rem] font-black uppercase text-ink/45">자치구 학교 수</p>
+            <p className="mt-1 font-serif text-3xl font-black tabular-nums text-ink">{finding.total_schools_in_district}</p>
+            <p className="mt-1 text-xs font-bold text-ink/55">건 (좌표 미확보 — 거리 측정 불가)</p>
+          </div>
+          <div className="rounded-md border border-ink/10 bg-paper p-4 sm:col-span-2">
+            <p className="text-[0.7rem] font-black uppercase text-ink/45">학교 종류별</p>
+            <div className="mt-2 flex flex-wrap gap-2 text-xs">
+              {kindEntries.slice(0, 5).map(([kind, count]) => (
+                <span key={kind} className="rounded-md border border-ink/10 bg-white px-2 py-1 font-bold text-ink/75">
+                  {kind} <strong className="text-ink">{count}</strong>
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       <p className="mt-4 text-sm leading-6 text-ink/75">{finding.impact_message}</p>
 
       {finding.nearby_schools.length > 0 ? (
         <div className="mt-4 rounded-md border border-ink/10 bg-white p-4">
           <p className="text-[0.7rem] font-black uppercase tracking-[0.12em] text-ink/45">
-            {finding.nearby_schools[0]?.matchedBy === "same_road" ? "같은 도로 학교" : "자치구 내 학교(샘플)"}
+            가까운 학교 (거리순)
           </p>
           <ul className="mt-2 grid gap-1.5 text-xs text-ink/75">
-            {finding.nearby_schools.slice(0, 8).map((school, index) => (
-              <li key={`${school.name}-${index}`} className="flex items-start gap-2">
-                <span className="mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-moss" />
-                <span>
-                  <strong className="text-ink">{school.name}</strong>
-                  <span className="text-ink/55"> · {school.kind}</span>
-                  {school.address ? <span className="text-ink/45"> · {school.address}</span> : null}
-                </span>
-              </li>
-            ))}
+            {finding.nearby_schools.slice(0, 8).map((school, index) => {
+              const zoneTone =
+                school.matchedBy === "absolute_zone"
+                  ? "bg-clay text-cream"
+                  : school.matchedBy === "relative_zone"
+                    ? "bg-brass text-cream"
+                    : "bg-ink/10 text-ink/70";
+              const zoneLabel =
+                school.matchedBy === "absolute_zone"
+                  ? "절대(50m)"
+                  : school.matchedBy === "relative_zone"
+                    ? "상대(200m)"
+                    : school.matchedBy === "same_road"
+                      ? "같은 도로"
+                      : "자치구";
+              return (
+                <li key={`${school.name}-${index}`} className="flex items-start gap-2">
+                  <span className={`mt-0.5 inline-block rounded px-1.5 py-0.5 text-[0.6rem] font-black uppercase ${zoneTone}`}>
+                    {zoneLabel}
+                  </span>
+                  <span className="flex-1">
+                    <strong className="text-ink">{school.name}</strong>
+                    <span className="text-ink/55"> · {school.kind}</span>
+                    {school.distance_meters !== undefined ? (
+                      <span className="ml-1 tabular-nums font-bold text-ink">· {school.distance_meters}m</span>
+                    ) : null}
+                    {school.address ? <span className="ml-1 text-ink/45">· {school.address}</span> : null}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         </div>
       ) : null}

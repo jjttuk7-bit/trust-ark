@@ -413,10 +413,10 @@ export async function POST(request: Request) {
         ? await runCompetitionDensityAgent({ payload, geocode, trace, radiusMeters: 200 })
         : null;
 
-    // 4) School Zone — business_permit 모드 (학교 정화구역 영향)
+    // 4) School Zone — business_permit 모드 (학교 정화구역 영향, 좌표 거리)
     const schoolZoneFinding =
       payload.mode === "business_permit"
-        ? await runSchoolZoneAgent({ payload, trace })
+        ? await runSchoolZoneAgent({ payload, geocode, trace })
         : null;
 
     // 4b) Trade Area — 서울 상권분석 4종 종합 (유동인구/매출/신규폐업/점포)

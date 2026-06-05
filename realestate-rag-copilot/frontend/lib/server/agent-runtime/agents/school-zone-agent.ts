@@ -9,7 +9,20 @@ import {
   summarizeNeisAttempt,
   type SchoolInfoRow
 } from "@/lib/server/neis-api";
+import { geocodeAddress, type GeocodeResult } from "@/lib/server/vworld";
 import type { TraceRecorder } from "../trace";
+
+/** Haversine 거리 (미터) */
+function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6_371_000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
 
 const AGENT = "Location Context Agent" as const;
 const TOOL = "fetchSchoolsByDistrict" as const;
@@ -112,9 +125,12 @@ async function loadSchools(officeCode: string): Promise<{ rows: SchoolInfoRow[];
 
 export async function runSchoolZoneAgent({
   payload,
+  geocode,
   trace
 }: {
   payload: AnalyzeRequest;
+  /** 사용자 위치 좌표 (200m/50m 정화구역 거리 계산용). 없으면 도로명·동 텍스트 매칭만 */
+  geocode?: GeocodeResult | null;
   trace: TraceRecorder;
 }): Promise<SchoolZoneFinding | null> {
   const { sido, sigungu, road } = extractSidoSigungu(payload.address ?? "");
@@ -157,35 +173,112 @@ export async function runSchoolZoneAgent({
           .join(" | ");
         const diagnosticExtra = `${diagnostic} · sample=[${sampleAddresses}]`;
 
-        const nearby = (sameRoadSchools.length > 0 ? sameRoadSchools : districtSchools.slice(0, 5)).map((s) => ({
-          name: s.SCHUL_NM ?? "(이름 없음)",
-          kind: s.SCHUL_KND_SC_NM ?? "기타",
-          address: s.ORG_RDNMA ?? "",
-          matchedBy: (sameRoadSchools.length > 0 ? "same_road" : "same_district") as "same_road" | "same_district"
-        }));
-
         const kindCounts = districtSchools.reduce<Record<string, number>>((acc, s) => {
           const kind = s.SCHUL_KND_SC_NM ?? "기타";
           acc[kind] = (acc[kind] ?? 0) + 1;
           return acc;
         }, {});
 
-        const impact = impactFor(businessType, districtSchools.length);
+        // ★ 사용자 좌표 있을 때 — 학교 주소 vworld geocode → Haversine 거리 계산
+        // 자치구 학교 전체를 geocode하기엔 너무 많아서 같은 도로 + 가까운 20개 우선
+        const userLat = geocode?.result?.lat;
+        const userLng = geocode?.result?.lng;
+        const hasUserCoord = typeof userLat === "number" && typeof userLng === "number";
+
+        type EnrichedSchool = {
+          row: SchoolInfoRow;
+          name: string;
+          kind: string;
+          address: string;
+          distance?: number;
+        };
+
+        let enriched: EnrichedSchool[] = [];
+        let inAbsoluteZone = 0; // 50m 이내
+        let inRelativeZone = 0; // 200m 이내
+
+        if (hasUserCoord) {
+          // 우선 같은 도로 학교부터, 그 다음 자치구 학교 무작위 상위 20개
+          const candidates = sameRoadSchools.length > 0
+            ? [...sameRoadSchools, ...districtSchools.filter((s) => !sameRoadSchools.includes(s))].slice(0, 25)
+            : districtSchools.slice(0, 20);
+
+          const results = await Promise.all(
+            candidates.map(async (s) => {
+              const address = s.ORG_RDNMA ?? "";
+              const enrichedItem: EnrichedSchool = {
+                row: s,
+                name: s.SCHUL_NM ?? "(이름 없음)",
+                kind: s.SCHUL_KND_SC_NM ?? "기타",
+                address
+              };
+              if (!address) return enrichedItem;
+              try {
+                const g = await geocodeAddress(address);
+                if (g.result) {
+                  enrichedItem.distance = haversine(userLat, userLng, g.result.lat, g.result.lng);
+                }
+              } catch {}
+              return enrichedItem;
+            })
+          );
+
+          enriched = results
+            .filter((e) => typeof e.distance === "number")
+            .sort((a, b) => (a.distance ?? 0) - (b.distance ?? 0));
+
+          inAbsoluteZone = enriched.filter((e) => (e.distance ?? Infinity) <= 50).length;
+          inRelativeZone = enriched.filter((e) => (e.distance ?? Infinity) <= 200).length;
+        }
+
+        // nearby_schools 구성 — 거리 정렬 (좌표 있을 때) 또는 같은 도로/자치구 (없을 때)
+        const nearby = hasUserCoord && enriched.length > 0
+          ? enriched.slice(0, 10).map<SchoolZoneFinding["nearby_schools"][number]>((e) => {
+              const d = e.distance ?? Infinity;
+              const matchedBy: SchoolZoneFinding["nearby_schools"][number]["matchedBy"] =
+                d <= 50 ? "absolute_zone" : d <= 200 ? "relative_zone" : "same_district";
+              return {
+                name: e.name,
+                kind: e.kind,
+                address: e.address,
+                matchedBy,
+                distance_meters: Math.round(d)
+              };
+            })
+          : (sameRoadSchools.length > 0 ? sameRoadSchools : districtSchools.slice(0, 5)).map((s) => ({
+              name: s.SCHUL_NM ?? "(이름 없음)",
+              kind: s.SCHUL_KND_SC_NM ?? "기타",
+              address: s.ORG_RDNMA ?? "",
+              matchedBy: (sameRoadSchools.length > 0 ? "same_road" : "same_district") as "same_road" | "same_district"
+            }));
+
+        // 영향도 — 절대보호구역(50m) 안에 학교 있으면 한 단계 상향
+        const baseImpact = impactFor(businessType, districtSchools.length);
+        const upgradeImpact = (hasUserCoord && inAbsoluteZone > 0 && (businessType === "pc_room" || businessType === "karaoke"))
+          ? { ...baseImpact, level: "high" as const, message: `${baseImpact.label}이(가) 50m 이내 학교 ${inAbsoluteZone}건의 절대보호구역에 위치 — 영업 사실상 불가.` }
+          : baseImpact;
 
         const finding: SchoolZoneFinding = {
           district: sigungu,
           total_schools_in_district: districtSchools.length,
           nearby_schools: nearby,
           school_kind_counts: kindCounts,
-          business_type_label: impact.label,
-          impact_level: impact.level,
-          impact_message: impact.message,
-          source: "NEIS 학교알리미 schoolInfo",
-          diagnostic: diagnosticExtra,
-          note:
-            sameRoadSchools.length > 0
-              ? `같은 도로(${road})에 학교 ${sameRoadSchools.length}건 — 정화구역 영향 확인 필요.`
-              : `${sigungu} 전체 학교 ${districtSchools.length}건 — 정확한 200m 거리는 추후 좌표 매칭으로 보강 예정.`
+          in_absolute_zone: hasUserCoord ? inAbsoluteZone : undefined,
+          in_relative_zone: hasUserCoord ? inRelativeZone : undefined,
+          business_type_label: upgradeImpact.label,
+          impact_level: upgradeImpact.level,
+          impact_message: upgradeImpact.message,
+          source: "NEIS 학교알리미 schoolInfo + VWorld geocode",
+          diagnostic: hasUserCoord
+            ? `${diagnosticExtra} · enriched=${enriched.length} · absolute(50m)=${inAbsoluteZone} relative(200m)=${inRelativeZone}`
+            : diagnosticExtra,
+          note: hasUserCoord
+            ? inRelativeZone > 0
+              ? `상대보호구역(200m) 내 학교 ${inRelativeZone}건 · 절대보호구역(50m) 내 ${inAbsoluteZone}건. 정확한 거리는 인근 학교 카드 참고.`
+              : `반경 200m 내 학교 없음. ${sigungu} 전체 ${districtSchools.length}건 중 가까운 학교 카드 참고.`
+            : sameRoadSchools.length > 0
+              ? `같은 도로(${road})에 학교 ${sameRoadSchools.length}건 — 정확한 거리는 좌표 매칭 후 보강.`
+              : `${sigungu} 전체 학교 ${districtSchools.length}건 — 좌표 미확보로 거리 측정 불가.`
         };
         return finding;
       },
